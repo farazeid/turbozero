@@ -115,6 +115,7 @@ class Trainer:
         num_devices: Optional[int] = None,
         wandb_run: Optional[Any] = None,
         extra_wandb_config: Optional[dict] = None,
+        wandb_entity: str = "",
     ):
         """
         Args:
@@ -143,6 +144,7 @@ class Trainer:
         - `num_devices`: (optional) number of devices to use, defaults to jax.local_device_count()
         - `wandb_run`: (optional) wandb run object, will continue logging to this run if passed, else a new run is initialized
         - `extra_wandb_config`: (optional) extra config to pass to wandb
+        - `wandb_entity`: (optional) wandb entity (username or team) to log to
         """
         self.num_devices = (
             num_devices if num_devices is not None else jax.local_device_count()
@@ -195,21 +197,27 @@ class Trainer:
         )
         # wandb
         self.wandb_project_name = wandb_project_name
+        self.wandb_entity = wandb_entity
         self.use_wandb = wandb_project_name != ""
         if self.use_wandb:
             if wandb_run is not None:
                 self.run = wandb_run
             else:
-                self.run = self.init_wandb(wandb_project_name, extra_wandb_config)
+                self.run = self.init_wandb(
+                    wandb_project_name, self.wandb_entity, extra_wandb_config
+                )
         else:
             self.run = None
         # check batch sizes, etc. are compatible with number of devices
         self.check_size_compatibilities()
 
-    def init_wandb(self, project_name: str, extra_wandb_config: Optional[dict]):
+    def init_wandb(
+        self, project_name: str, entity: str, extra_wandb_config: Optional[dict]
+    ):
         """Initializes wandb run.
         Args:
         - `project_name`: name of wandb project
+        - `entity`: wandb entity
         - `extra_wandb_config`: (optional) extra config to pass to wandb
 
         Returns:
@@ -217,9 +225,18 @@ class Trainer:
         """
         if extra_wandb_config is None:
             extra_wandb_config = {}
-        return wandb.init(
-            project=project_name, config={**self.get_config(), **extra_wandb_config}
-        )
+
+        init_kwargs = {
+            "project": project_name,
+            "config": {
+                **self.get_config(),
+                **extra_wandb_config,
+            },
+        }
+        if entity:
+            init_kwargs["entity"] = entity
+
+        return wandb.init(**init_kwargs)
 
     def check_size_compatibilities(self):
         """Checks if batch sizes, etc. are compatible with number of devices.

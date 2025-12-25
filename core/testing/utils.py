@@ -1,9 +1,15 @@
-
 import os
+import sys
+
+# On Mac with Homebrew, if cairo is not found, try to add the homebrew path
+if sys.platform == "darwin" and not os.environ.get("DYLD_FALLBACK_LIBRARY_PATH"):
+    os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = "/opt/homebrew/lib:/usr/local/lib"
 
 import xml.etree.ElementTree as ET
+
 import cairosvg
 from PIL import Image
+
 
 def render_pgx_2p(frames, p_ids, title, frame_dir, p1_label='Black', p2_label='White', duration=900):
     """really messy render function for rendering frames from a 2-player game

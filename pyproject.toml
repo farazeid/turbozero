@@ -1,41 +1,49 @@
-[tool.poetry]
+[project]
 name = "turbozero"
 version = "0.1.1"
 description = "vectorized alphazero/mcts in JAX"
-authors = ["lowrollr <92640744+lowrollr@users.noreply.github.com>"]
-license = "Apache-2.0"
+authors = [{ name = "lowrollr", email = "92640744+lowrollr@users.noreply.github.com" }]
+requires-python = ">=3.10,<4"
 readme = "README.md"
-packages = [
-    { include = "core" }
+license = "Apache-2.0"
+dependencies = [
+    "graphviz>=0.20.1,<0.21",
+    "wandb>=0.18.6,<0.19",
+    "jax==0.4.35",
+    "jaxlib>=0.4.34,<0.5",
+    "flax>=0.8.4,<0.9",
+    "optax>=0.1.8,<0.2",
+    "orbax-checkpoint>=0.10.1,<0.11",
+    "chex>=0.1.85,<0.2",
+    "pgx>=2.0.1,<3",
+    "dm-haiku>=0.0.12,<0.0.13",
+    "cairosvg>=2.7.1,<3",
+    "pip>=25.3",
+    "ipykernel>=6.29.5",
+    "notebook>=7.5.1",
 ]
 
-[[tool.poetry.source]]
+[dependency-groups]
+dev = ["ipykernel>=6.25.1,<7"]
+
+[tool.uv]
+
+[[tool.uv.index]]
 name = "PyPI"
-priority = "primary"
+url = "https://pypi.org/simple/"
+default = true
 
-
-[[tool.poetry.source]]
+[[tool.uv.index]]
 name = "jax"
 url = "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
-priority = "primary"
+default = true
 
-[tool.poetry.dependencies]
-python = "^3.10"
-graphviz = "^0.20.1"
-wandb = "^0.18.6"
-jax = "0.4.35"
-jaxlib = "^0.4.34"
-flax = "^0.8.4"
-optax = "^0.1.8"
-orbax-checkpoint = "^0.10.1"
-chex = "^0.1.85"
-pgx = "^2.0.1"
-dm-haiku = "^0.0.12"
-cairosvg = "^2.7.1"
+[tool.hatch.build.targets.sdist]
+include = ["core"]
 
-[tool.poetry.group.dev.dependencies]
-ipykernel = "^6.25.1"
+[tool.hatch.build.targets.wheel]
+include = ["core"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

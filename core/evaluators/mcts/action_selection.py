@@ -1,4 +1,3 @@
-
 from typing import Dict
 
 import chex
@@ -8,13 +7,13 @@ from core.evaluators.mcts.state import MCTSTree
 
 
 def normalize_q_values(
-    q_values: chex.Array, 
-    child_n_values: chex.Array, 
+    q_values: chex.Array,
+    child_n_values: chex.Array,
     parent_q_value: float,
-    epsilon: float
+    epsilon: float,
 ) -> chex.Array:
     """Normalize Q-values to be in the range [0, 1].
-    
+
     Args:
     - `q_values`: Q-values to normalize
     - `child_n_values`: visit counts of child nodes
@@ -28,45 +27,40 @@ def normalize_q_values(
     max_value = jnp.maximum(parent_q_value, jnp.max(q_values, axis=-1))
     completed_by_min = jnp.where(child_n_values > 0, q_values, min_value)
     normalized = (completed_by_min - min_value) / (
-        jnp.maximum(max_value - min_value, epsilon))
+        jnp.maximum(max_value - min_value, epsilon)
+    )
     return normalized
 
 
 class MCTSActionSelector:
     """Base class for action selection in MCTS.
-    
+
     Is callable, selects an action given a search tree state.
     """
 
-    def __init__(self, epsilon: float = 1e-8): 
+    def __init__(self, epsilon: float = 1e-8):
         """
         Args:
         - `epsilon`: small value to avoid division by zero
         """
         self.epsilon = epsilon
 
-
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
         """Selects an action given a search tree state. Implemented by subclasses."""
         raise NotImplementedError()
 
-
     def get_config(self) -> Dict:
         """Returns the configuration of the action selector. Used for logging."""
-        return {
-            "epsilon": self.epsilon
-        }
+        return {"epsilon": self.epsilon}
 
 
 class PUCTSelector(MCTSActionSelector):
     """PUCT (Polynomial Upper Confidence Trees) action selector.
-    
+
     This is the algorithm used for action selection within AlphaZero."""
 
-    def __init__(self, 
-        c: float = 1.0,
-        epsilon: float = 1e-8, 
-        q_transform = normalize_q_values
+    def __init__(
+        self, c: float = 1.0, epsilon: float = 1e-8, q_transform=normalize_q_values
     ):
         """
         Args:
@@ -78,15 +72,13 @@ class PUCTSelector(MCTSActionSelector):
         self.c = c
         self.q_transform = q_transform
 
-
     def get_config(self) -> Dict:
         """Returns the configuration of the PUCT action selector. Used for logging."""
         return {
             "c": self.c,
-            'q_transform': self.q_transform.__name__,
-            **super().get_config()
+            "q_transform": self.q_transform.__name__,
+            **super().get_config(),
         }
-
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
         """Selects an action given a search tree state.
@@ -101,11 +93,11 @@ class PUCTSelector(MCTSActionSelector):
         """
         # get child q-values
         node = tree.data_at(index)
-        q_values = tree.get_child_data('q', index)
+        q_values = tree.get_child_data("q", index)
         # apply discount to q-values
         discounted_q_values = q_values * discount
         # get child visit counts
-        n_values = tree.get_child_data('n', index)
+        n_values = tree.get_child_data("n", index)
         # normalize/transform q-values
         q_values = self.q_transform(discounted_q_values, n_values, node.q, self.epsilon)
         # calculate U-values
@@ -114,16 +106,17 @@ class PUCTSelector(MCTSActionSelector):
         puct_values = q_values + u_values
         # select action with highest PUCT value
         return puct_values.argmax()
-    
+
 
 class MuZeroPUCTSelector(MCTSActionSelector):
     """Implements the variant of PUCT used in MuZero."""
 
-    def __init__(self, 
-        c1: float = 1.25, 
-        c2: float = 19652, 
+    def __init__(
+        self,
+        c1: float = 1.25,
+        c2: float = 19652,
         epsilon: float = 1e-8,
-        q_transform = normalize_q_values
+        q_transform=normalize_q_values,
     ):
         """
         Args:
@@ -136,7 +129,6 @@ class MuZeroPUCTSelector(MCTSActionSelector):
         self.c1 = c1
         self.c2 = c2
         self.q_transform = q_transform
-    
 
     def get_config(self) -> Dict:
         """Returns the configuration of the MuZero PUCT action selector. Used for logging."""
@@ -144,7 +136,7 @@ class MuZeroPUCTSelector(MCTSActionSelector):
             "c1": self.c1,
             "c2": self.c2,
             "q_transform": self.q_transform.__name__,
-            **super().get_config()
+            **super().get_config(),
         }
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
@@ -160,13 +152,15 @@ class MuZeroPUCTSelector(MCTSActionSelector):
         """
         # get child q-values
         node = tree.data_at(index)
-        q_values = tree.get_child_data('q', index)
+        q_values = tree.get_child_data("q", index)
         # apply discount to q-values
         discounted_q_values = q_values * discount
         # get child visit counts
-        n_values = tree.get_child_data('n', index)
+        n_values = tree.get_child_data("n", index)
         # normalize/transform q-values
-        q_values = self.q_transform(discounted_q_values, q_values, n_values, node.q, self.epsilon)
+        q_values = self.q_transform(
+            discounted_q_values, q_values, n_values, node.q, self.epsilon
+        )
         # calculate U-values
         base_term = node.p * jnp.sqrt(node.n) / (n_values + 1)
         log_term = jnp.log((node.n + self.c2 + 1) / self.c2) + self.c1

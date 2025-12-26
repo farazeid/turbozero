@@ -227,4 +227,8 @@ if __name__ == "__main__":
         wandb_project_name="dev-go",
     )
 
-    output = trainer.train_loop(seed=0, num_epochs=100, eval_every=5)
+    output = trainer.train_loop(
+        seed=args.seed,
+        num_epochs=args.num_epochs,
+        eval_every=args.eval_every,
+    )

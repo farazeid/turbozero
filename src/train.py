@@ -13,7 +13,7 @@ from core.evaluators.evaluation_fns import (
     make_nn_eval_fn,
     make_nn_eval_fn_no_params_callable,
 )
-from core.evaluators.mcts.action_selection import PUCTSelector
+from core.evaluators.mcts.action_selection import MuZeroPUCTSelector
 from core.evaluators.mcts.mcts import MCTS
 from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
@@ -61,21 +61,26 @@ def state_to_nn_input(state):
 
 
 def greedy_eval(obs):
-    value = (obs[..., 0].sum() - obs[..., 1].sum()) / 64
+    num_board_pos = obs.shape[-3] * obs.shape[-2]
+    value = (obs[..., 0].sum() - obs[..., 1].sum()) / num_board_pos
     return jnp.ones((1, env.num_actions)), jnp.array([value])
 
 
 def make_rot_transform_fn(amnt: int):
     def rot_transform_fn(mask, policy, state):
+        num_board_pos = env.num_actions - 1
+        board_length = int(num_board_pos**0.5)
         action_ids = jnp.arange(
-            65
-        )  # 65 total actions, but only rotate the first 64! (65th is always do nothing action)
+            env.num_actions
+        )  # total actions, but only rotate the spatial ones! (last is always do nothing/pass action)
         # we only use state.observation, no need to update the rest of the state fields
         new_obs = jnp.rot90(state.observation, amnt, axes=(-3, -2))
         # map action ids to new action ids
-        idxs = jnp.arange(64).reshape(8, 8)  # rotate first 64 actions
+        idxs = jnp.arange(num_board_pos).reshape(
+            board_length, board_length
+        )  # rotate spatial actions
         new_idxs = jnp.rot90(idxs, amnt, axes=(0, 1)).flatten()
-        action_ids = action_ids.at[:64].set(new_idxs)
+        action_ids = action_ids.at[:num_board_pos].set(new_idxs)
         # get new mask and policy
         new_mask = mask[..., action_ids]
         new_policy = policy[..., action_ids]
@@ -86,37 +91,42 @@ def make_rot_transform_fn(amnt: int):
 
 @dataclass
 class Args:
-    resnet_num_blocks: int = 4
-    resnet_num_channels: int = 32
+    resnet_num_blocks: int = 20
+    resnet_num_channels: int = 256
 
-    eval_num_iterations: int = 32
-    eval_max_nodes: int = 40
+    eval_num_iterations: int = 800
+    eval_max_nodes: int = 1200
     eval_temperature: float = 1.0
 
-    eval_test_num_iterations: int = 64
-    eval_test_max_nodes: int = 80
+    eval_test_num_iterations: int = 800
+    eval_test_max_nodes: int = 1200
     eval_test_temperature: float = 0.0
 
-    buffer_capacity: int = 1_000
+    puct_c1: float = 1.25
+    puct_c2: float = 19652
+
+    buffer_capacity: int = 1_000_000
 
     render_duration: int = 900
 
-    batch_size: int = 1024
-    train_batch_size: int = 4096
+    batch_size: int = 2048
+    train_batch_size: int = 2048
     warmup_steps: int = 0
-    collection_steps_per_epoch: int = 256
-    train_steps_per_epoch: int = 64
+    collection_steps_per_epoch: int = 2048
+    train_steps_per_epoch: int = 1000
 
-    l2_reg_lambda: float = 0.0
+    l2_reg_lambda: float = 1e-4
 
-    learning_rate: float = 1e-3
+    learning_rate_0: float = 1e-2
+    learning_rate_1: float = 1e-3
+    learning_rate_2: float = 1e-4
 
-    max_episode_steps: int = 80
+    max_episode_steps: int = 700  # Go games are longer
 
     tester_num_episodes: int = 128
 
     seed: int = 0
-    num_epochs: int = 100
+    num_epochs: int = 700
     eval_every: int = 5
 
 
@@ -125,7 +135,7 @@ if __name__ == "__main__":
 
     args = tyro.cli(Args)
 
-    env = pgx.make("othello")
+    env = pgx.make("go_19x19")
 
     resnet = AZResnet(
         AZResnetConfig(
@@ -140,7 +150,7 @@ if __name__ == "__main__":
         num_iterations=args.eval_num_iterations,
         max_nodes=args.eval_max_nodes,
         branching_factor=env.num_actions,
-        action_selector=PUCTSelector(),
+        action_selector=MuZeroPUCTSelector(c1=args.puct_c1, c2=args.puct_c2),
         temperature=args.eval_temperature,
     )
 
@@ -149,20 +159,7 @@ if __name__ == "__main__":
         num_iterations=args.eval_test_num_iterations,
         max_nodes=args.eval_test_max_nodes,
         branching_factor=env.num_actions,
-        action_selector=PUCTSelector(),
-        temperature=args.eval_test_temperature,
-    )
-
-    model = pgx.make_baseline_model("othello_v0")
-
-    baseline_eval_fn = make_nn_eval_fn_no_params_callable(model, state_to_nn_input)
-
-    baseline_az = AlphaZero(MCTS)(  # type: ignore[operator]
-        eval_fn=baseline_eval_fn,
-        num_iterations=args.eval_test_num_iterations,
-        max_nodes=args.eval_test_max_nodes,
-        branching_factor=env.num_actions,
-        action_selector=PUCTSelector(),
+        action_selector=MuZeroPUCTSelector(c1=args.puct_c1, c2=args.puct_c2),
         temperature=args.eval_test_temperature,
     )
 
@@ -175,7 +172,7 @@ if __name__ == "__main__":
         num_iterations=args.eval_test_num_iterations,
         max_nodes=args.eval_test_max_nodes,
         branching_factor=env.num_actions,
-        action_selector=PUCTSelector(),
+        action_selector=MuZeroPUCTSelector(c1=args.puct_c1, c2=args.puct_c2),
         temperature=args.eval_test_temperature,
     )
 
@@ -198,7 +195,16 @@ if __name__ == "__main__":
         train_steps_per_epoch=args.train_steps_per_epoch,
         nn=resnet,
         loss_fn=partial(az_default_loss_fn, l2_reg_lambda=args.l2_reg_lambda),
-        optimizer=optax.adam(args.learning_rate),
+        optimizer=optax.sgd(
+            learning_rate=optax.piecewise_constant_schedule(
+                init_value=args.learning_rate_0,
+                boundaries_and_scales={
+                    200_000: args.learning_rate_1,
+                    400_000: args.learning_rate_2,
+                },
+            ),
+            momentum=0.9,
+        ),
         evaluator=az_evaluator,
         memory_buffer=replay_memory,
         max_episode_steps=args.max_episode_steps,
@@ -206,13 +212,6 @@ if __name__ == "__main__":
         env_init_fn=init_fn,
         state_to_nn_input_fn=state_to_nn_input,
         testers=[
-            TwoPlayerBaseline(
-                num_episodes=args.tester_num_episodes,
-                baseline_evaluator=baseline_az,
-                render_fn=render_fn,
-                render_dir=".",
-                name="pretrained",
-            ),
             TwoPlayerBaseline(
                 num_episodes=args.tester_num_episodes,
                 baseline_evaluator=greedy_az,

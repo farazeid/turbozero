@@ -604,7 +604,7 @@ class Trainer:
         num_epochs: int,
         eval_every: int = 1,
         initial_state: Optional[TrainLoopOutput] = None,
-    ) -> Tuple[CollectionState, TrainState]:
+    ) -> TrainLoopOutput:
         """Runs the training loop for `num_epochs` epochs. Mostly configured by the Trainer's attributes.
         - Collects self-play episdoes across a batch of environments.
         - Trains the neural network on the collected experiences.

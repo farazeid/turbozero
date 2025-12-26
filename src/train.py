@@ -17,6 +17,7 @@ from core.evaluators.mcts.action_selection import MuZeroPUCTSelector
 from core.evaluators.mcts.mcts import MCTS
 from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
+from core.testing.elo_tester import RobustEloTester
 from core.testing.two_player_baseline import TwoPlayerBaseline
 from core.testing.utils import render_pgx_2p
 from core.training.loss_fns import az_default_loss_fn
@@ -106,6 +107,7 @@ class Args:
     puct_c2: float = 19652
 
     buffer_capacity: int = 1_000_000
+    ckpt_dir: str = "/tmp/turbozero_checkpoints"
 
     render_duration: int = 900
 
@@ -124,6 +126,9 @@ class Args:
     max_episode_steps: int = 700  # Go games are longer
 
     tester_num_episodes: int = 128
+    elo_eval_num_episodes: int = 128
+    elo_base: float = 0.0
+    min_win_rate_elo: float = 0.55
 
     seed: int = 0
     num_epochs: int = 700
@@ -219,11 +224,21 @@ if __name__ == "__main__":
                 render_dir=".",
                 name="greedy",
             ),
+            RobustEloTester(
+                num_episodes=args.elo_eval_num_episodes,
+                base_elo=args.elo_base,
+                min_win_rate_for_update=args.min_win_rate_elo,
+                render_fn=render_fn,
+                render_dir=".",
+                league_dir=args.ckpt_dir,
+                name="selfplay",
+            ),
         ],
         evaluator_test=az_evaluator_test,
         data_transform_fns=transforms,
         wandb_entity="fastsverl",
         wandb_project_name="dev-go",
+        ckpt_dir=args.ckpt_dir,
     )
 
     output = trainer.train_loop(

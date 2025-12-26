@@ -2,15 +2,18 @@
 name = "turbozero"
 version = "0.1.1"
 description = "vectorized alphazero/mcts in JAX"
-authors = [{ name = "lowrollr", email = "92640744+lowrollr@users.noreply.github.com" }]
+authors = [
+    { name = "lowrollr", email = "92640744+lowrollr@users.noreply.github.com" },
+]
 requires-python = ">=3.10,<4"
 readme = "README.md"
 license = "Apache-2.0"
 dependencies = [
     "graphviz>=0.20.1,<0.21",
     "wandb>=0.18.6,<0.19",
-    "jax==0.4.35",
-    "jaxlib>=0.4.34,<0.5",
+    "jax==0.4.34",
+    "jax[cuda12-pip]==0.4.34 ; sys_platform == 'linux'",
+    "jaxlib==0.4.34",
     "flax>=0.8.4,<0.9",
     "optax>=0.1.8,<0.2",
     "orbax-checkpoint>=0.10.1,<0.11",

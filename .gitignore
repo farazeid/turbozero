@@ -1,5 +1,7 @@
 wandb
 
+*.ckpt
+
 checkpoints/
 .vscode/
 

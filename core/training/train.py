@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 from functools import partial
 from typing import Any, List, Optional, Tuple
 
@@ -619,6 +620,9 @@ class Trainer:
         Returns:
         - (TrainLoopOutput): contains train_state, collection_state, test_states, cur_epoch after training loop
         """
+        assert self.collection_steps_per_epoch > 0, f"collection_steps_per_epoch: {self.collection_steps_per_epoch} must be > 0"  # fmt: skip
+        assert self.train_steps_per_epoch > 0, f"train_steps_per_epoch: {self.train_steps_per_epoch} must be > 0"  # fmt: skip
+
         # init rng
         key = jax.random.PRNGKey(seed)
 
@@ -665,14 +669,35 @@ class Trainer:
             collect_keys = partition(
                 jax.random.split(collect_key, self.batch_size), self.num_devices
             )
+
+            ___t0 = time.perf_counter()
+
             collection_state = collect(
                 collect_keys, collection_state, params, self.collection_steps_per_epoch
             )
+
+            ___t1 = time.perf_counter()
+
+            env_steps_per_second = (
+                self.batch_size * self.collection_steps_per_epoch
+            ) / (___t1 - ___t0)
+
             # train
             train_key, key = jax.random.split(key)
+
+            ___t0 = time.perf_counter()
+
             collection_state, train_state, metrics = self.train_steps(
                 train_key, collection_state, train_state, self.train_steps_per_epoch
             )
+
+            ___t1 = time.perf_counter()
+
+            seconds_per_train_step = (___t1 - ___t0) / self.train_steps_per_epoch
+
+            metrics["env_steps_per_second"] = jnp.array(env_steps_per_second)
+            metrics["seconds_per_train_step"] = jnp.array(seconds_per_train_step)
+
             # log metrics
             collection_steps = (
                 self.batch_size * (cur_epoch + 1) * self.collection_steps_per_epoch

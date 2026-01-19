@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from functools import partial
@@ -139,6 +140,12 @@ if __name__ == "__main__":
     os.environ["CUDA_PATH"] = "/usr/local/cuda"
 
     args = tyro.cli(Args)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(funcName)s] - %(message)s",
+        handlers=[logging.StreamHandler()],
+    )
 
     env = pgx.make("go_19x19")
 

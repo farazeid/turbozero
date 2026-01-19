@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 from functools import partial
@@ -11,6 +12,8 @@ from core.common import two_player_game
 from core.evaluators.evaluator import Evaluator
 from core.testing.tester import BaseTester, TestState
 from core.types import EnvInitFn, EnvStepFn
+
+logger = logging.getLogger(__name__)
 
 
 @chex.dataclass(frozen=True)
@@ -78,7 +81,8 @@ class RobustEloTester(BaseTester):
                 for item in items
                 if item.isdigit() and os.path.isdir(os.path.join(self.league_dir, item))
             ]
-        except OSError:
+        except OSError as e:
+            logger.error(f"Error listing league directory {self.league_dir}: {e}")
             return None
 
         if not checkpoints:
@@ -100,6 +104,7 @@ class RobustEloTester(BaseTester):
                 return None
 
         except Exception as e:
+            logger.error(f"Error loading checkpoint {ckpt_path}: {e}")
             return None
 
     @partial(jax.pmap, axis_name="d", static_broadcasted_argnums=(0, 1, 2, 3, 4))
@@ -198,8 +203,8 @@ class RobustEloTester(BaseTester):
                 vs_past_score = vs_past_score_devices.mean()
                 win_rate_vs_past = (vs_past_score + 1) / 2
                 metrics[f"{self.name}_win_rate_vs_league"] = win_rate_vs_past
-            except (ValueError, TypeError, AssertionError):
-                pass
+            except (ValueError, TypeError, AssertionError) as e:
+                logger.warning(f"Failed to run evaluation against past params: {e}")
 
         new_state = state.replace(best_params=new_best_params, elo=new_elo)
 

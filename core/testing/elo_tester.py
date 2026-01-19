@@ -66,9 +66,7 @@ class RobustEloTester(BaseTester):
         expected_score = 0.5
         return current_elo + self.elo_k_factor * (match_score - expected_score)
 
-    def _load_random_past_params(
-        self, current_params: chex.ArrayTree
-    ) -> Optional[chex.ArrayTree]:
+    def _load_random_past_params(self) -> Optional[chex.ArrayTree]:
         """Loads parameters from a random past checkpoint in the league directory."""
         if not os.path.exists(self.league_dir):
             return None
@@ -173,7 +171,7 @@ class RobustEloTester(BaseTester):
         }
 
         # 2. Evaluate vs League (Robustness)
-        past_params = self._load_random_past_params(params)
+        past_params = self._load_random_past_params()
 
         if past_params is not None:
             # Basic shape check/protection could go here

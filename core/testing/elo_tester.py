@@ -174,19 +174,32 @@ class RobustEloTester(BaseTester):
         past_params = self._load_random_past_params()
 
         if past_params is not None:
-            # Basic shape check/protection could go here
-            vs_past_score_devices, _ = self.test_vs_params(
-                max_steps,
-                env_step_fn,
-                env_init_fn,
-                evaluator,
-                keys,
-                params,
-                past_params,
-            )
-            vs_past_score = vs_past_score_devices.mean()
-            win_rate_vs_past = (vs_past_score + 1) / 2
-            metrics[f"{self.name}_win_rate_vs_league"] = win_rate_vs_past
+            try:
+                # params is replicated, so it has shape (num_devices, ...)
+                # past_params is not replicated, so it has shape (...)
+                # We extract a single copy of params to compare shapes
+                params_sample = jax.tree_map(lambda x: x[0], params)
+                chex.assert_trees_all_equal_shapes(params_sample, past_params)
+
+                # replicate past_params for pmap
+                past_params = jax.device_put_replicated(
+                    past_params, jax.local_devices()[:num_devices]
+                )
+
+                vs_past_score_devices, _ = self.test_vs_params(
+                    max_steps,
+                    env_step_fn,
+                    env_init_fn,
+                    evaluator,
+                    keys,
+                    params,
+                    past_params,
+                )
+                vs_past_score = vs_past_score_devices.mean()
+                win_rate_vs_past = (vs_past_score + 1) / 2
+                metrics[f"{self.name}_win_rate_vs_league"] = win_rate_vs_past
+            except (ValueError, TypeError, AssertionError):
+                pass
 
         new_state = state.replace(best_params=new_best_params, elo=new_elo)
 

@@ -204,8 +204,8 @@ if __name__ == "__main__":
             learning_rate=optax.piecewise_constant_schedule(
                 init_value=args.learning_rate_0,
                 boundaries_and_scales={
-                    200_000: args.learning_rate_1,
-                    400_000: args.learning_rate_2,
+                    200_000: args.learning_rate_1 / args.learning_rate_0,
+                    400_000: args.learning_rate_2 / args.learning_rate_1,
                 },
             ),
             momentum=0.9,

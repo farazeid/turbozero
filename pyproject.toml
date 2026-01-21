@@ -25,6 +25,15 @@ dependencies = [
     "ipykernel>=6.29.5",
     "notebook>=7.5.1",
     "tyro>=1.0.3",
+    "nvidia-cuda-nvcc-cu12~=12.8.0 ; sys_platform == 'linux'",
+    "nvidia-cuda-runtime-cu12~=12.8.0 ; sys_platform == 'linux'",
+    "nvidia-cublas-cu12~=12.8.0 ; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12~=9.16.0 ; sys_platform == 'linux'",
+    "nvidia-cufft-cu12~=11.3.0 ; sys_platform == 'linux'",
+    "nvidia-cusolver-cu12~=11.6.0 ; sys_platform == 'linux'",
+    "nvidia-cusparse-cu12~=12.4.0 ; sys_platform == 'linux'",
+    "nvidia-nccl-cu12~=2.27.0 ; sys_platform == 'linux'",
+    "nvidia-nvjitlink-cu12~=12.8.0 ; sys_platform == 'linux'",
 ]
 
 [dependency-groups]

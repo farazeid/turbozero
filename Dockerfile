@@ -29,5 +29,5 @@ RUN \
 
 VOLUME /app/.venv
 
-# hare build -t {image} .
-# hare run --rm -it -v .:/app -e WANDB_API_KEY=$WANDB_API_KEY --gpus device=0 {image} {command}
+# hare build -t $USER/turbozero .
+# hare run --rm -it -v .:/app -e WANDB_API_KEY=b5c158bd2412bc120b3dfb33570d67747f4fdac2 --gpus device=0 $USER/turbozero uv run src/train.py

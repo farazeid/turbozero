@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Dict, Tuple
 
 import chex
 import jax
@@ -7,14 +7,25 @@ import optax
 from flax.training.train_state import TrainState
 
 from core.memory.replay_memory import BaseExperience
+from src.shapley import (
+    compute_behaviour_characteristic_loss,
+    compute_behaviour_shapley_loss,
+    compute_prediction_shapley_loss,
+)
 
 
 def az_default_loss_fn(
     params: chex.ArrayTree,
     train_state: TrainState,
     experience: BaseExperience,
+    key: jax.Array,
     l2_reg_lambda: float = 0.0001,
-) -> Tuple[chex.Array, Tuple[chex.ArrayTree, optax.OptState]]:
+    pred_shapley_weight: float = 0.0,
+    bhvr_char_weight: float = 0.0,
+    bhvr_shapley_weight: float = 0.0,
+    behaviour_shapley_approx: bool = True,
+    shapley_only: bool = False,
+) -> Tuple[chex.Array, Tuple[Dict[str, chex.Array], optax.OptState]]:
     """Implements the default AlphaZero loss function.
 
     = Policy Loss + Value Loss + L2 Regularization
@@ -44,9 +55,17 @@ def az_default_loss_fn(
     mutables = ["batch_stats"] if hasattr(train_state, "batch_stats") else []
 
     # get predictions
-    (pred_policy, pred_value), updates = train_state.apply_fn(
+    results = train_state.apply_fn(
         variables, x=experience.observation_nn, train=True, mutable=mutables
     )
+    if mutables:
+        preds, updates = results
+    else:
+        preds = results
+        updates = {}
+
+    pred_policy = preds["policy"]
+    pred_value = preds["value"]
 
     # set invalid actions in policy to -inf
     pred_policy = jnp.where(
@@ -71,6 +90,43 @@ def az_default_loss_fn(
     )
 
     # total loss
-    loss = policy_loss + value_loss + l2_reg
-    aux_metrics = {"policy_loss": policy_loss, "value_loss": value_loss}
+    loss = jnp.where(shapley_only, 0.0, policy_loss + value_loss) + l2_reg
+    aux_metrics = {
+        "policy_loss": policy_loss,
+        "value_loss": value_loss,
+        "l2_reg": l2_reg,
+    }
+
+    if pred_shapley_weight > 0.0:
+        s_loss, s_metrics = compute_prediction_shapley_loss(
+            params, train_state, experience.observation_nn, key
+        )
+        loss = loss + pred_shapley_weight * s_loss
+        for k, v in s_metrics.items():
+            aux_metrics[k] = v
+
+    if bhvr_char_weight > 0.0:
+        c_loss, c_metrics = compute_behaviour_characteristic_loss(
+            params,
+            train_state,
+            experience.observation_nn,
+            key,
+            behaviour_shapley_approx,
+        )
+        loss = loss + bhvr_char_weight * c_loss
+        for k, v in c_metrics.items():
+            aux_metrics[k] = v
+
+    if bhvr_shapley_weight > 0.0:
+        bs_loss, bs_metrics = compute_behaviour_shapley_loss(
+            params,
+            train_state,
+            experience.observation_nn,
+            key,
+            behaviour_shapley_approx,
+        )
+        loss = loss + bhvr_shapley_weight * bs_loss
+        for k, v in bs_metrics.items():
+            aux_metrics[k] = v
+
     return loss, (aux_metrics, updates)

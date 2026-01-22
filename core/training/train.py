@@ -17,6 +17,7 @@ from flax.training.train_state import TrainState
 import wandb
 from core.common import partition, step_env_and_evaluator
 from core.evaluators.evaluator import Evaluator
+from core.evaluators.shapley_eval import ShapleyVisualizer
 from core.memory.replay_memory import (
     BaseExperience,
     EpisodeReplayBuffer,
@@ -117,6 +118,8 @@ class Trainer:
         wandb_run: Optional[Any] = None,
         extra_wandb_config: Optional[dict] = None,
         wandb_entity: str = "",
+        shapley_update_ratio: int = 1,
+        visualizer: Optional[ShapleyVisualizer] = None,
     ):
         """
         Args:
@@ -199,6 +202,8 @@ class Trainer:
         # wandb
         self.wandb_project_name = wandb_project_name
         self.wandb_entity = wandb_entity
+        self.shapley_update_ratio = shapley_update_ratio
+        self.visualizer = visualizer
         self.use_wandb = wandb_project_name != ""
         if self.use_wandb:
             if wandb_run is not None:
@@ -406,30 +411,58 @@ class Trainer:
 
     @partial(jax.pmap, axis_name="d", static_broadcasted_argnums=(0,))
     def one_train_step(
-        self, ts: TrainState, batch: BaseExperience
+        self, ts: TrainState, batch: BaseExperience, key: jax.Array
     ) -> Tuple[TrainState, dict]:
         """Make a single training step.
 
         Args:
         - `ts`: TrainState
         - `batch`: minibatch of experiences
+        - `key`: RNG key
 
         Returns:
         - (TrainState, dict): updated TrainState and metrics
         """
-        # calculate loss, get gradients
-        grad_fn = jax.value_and_grad(self.loss_fn, has_aux=True)
-        (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, batch)
-        # apply gradients
+
+        # First step: joint update (shapley_only=False)
+        grad_fn = jax.value_and_grad(
+            partial(self.loss_fn, shapley_only=False), has_aux=True
+        )
+        (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, batch, key)
         grads = jax.lax.pmean(grads, axis_name="d")
         ts = ts.apply_gradients(grads=grads)
-        # update batchnorm stats
         if hasattr(ts, "batch_stats"):
             ts = ts.replace(
                 batch_stats=jax.lax.pmean(updates["batch_stats"], axis_name="d")
             )
-        # return updated train state and metrics
         metrics = {**metrics, "loss": loss}
+
+        if self.shapley_update_ratio > 1:
+
+            def train_step_body(i, state_and_metrics):
+                ts, current_metrics = state_and_metrics
+                # Use i + 1 to avoid reusing the same key as the first step
+                sub_key = jax.random.fold_in(key, i + 1)
+                grad_fn = jax.value_and_grad(
+                    partial(self.loss_fn, shapley_only=True), has_aux=True
+                )
+                (sub_loss, (m, updates)), grads = grad_fn(ts.params, ts, batch, sub_key)
+                # apply gradients
+                grads = jax.lax.pmean(grads, axis_name="d")
+                ts = ts.apply_gradients(grads=grads)
+                # update batchnorm stats
+                if hasattr(ts, "batch_stats"):
+                    ts = ts.replace(
+                        batch_stats=jax.lax.pmean(updates["batch_stats"], axis_name="d")
+                    )
+                # combine metrics
+                combined_metrics = {**current_metrics, **m, "loss": sub_loss}
+                return ts, combined_metrics
+
+            ts, metrics = jax.lax.fori_loop(
+                0, self.shapley_update_ratio - 1, train_step_body, (ts, metrics)
+            )
+
         return ts, metrics
 
     def train_steps(
@@ -470,7 +503,11 @@ class Trainer:
                 lambda x: x.reshape((self.num_devices, -1, *x.shape[1:])), batch
             )
             # make training step
-            train_state, metrics = self.one_train_step(train_state, batch)
+            step_key, one_step_key = jax.random.split(step_key)
+            one_step_keys = jax.random.split(one_step_key, self.num_devices)
+            train_state, metrics = self.one_train_step(
+                train_state, batch, one_step_keys
+            )
             # append metrics from step
             if metrics:
                 batch_metrics.append(metrics)
@@ -664,6 +701,7 @@ class Trainer:
 
         # training loop
         while cur_epoch < num_epochs:
+            epoch_start_time = time.perf_counter()
             # collect self-play games
             collect_key, key = jax.random.split(key)
             collect_keys = partition(
@@ -695,8 +733,10 @@ class Trainer:
 
             seconds_per_train_step = (___t1 - ___t0) / self.train_steps_per_epoch
 
-            metrics["env_steps_per_second"] = jnp.array(env_steps_per_second)
-            metrics["seconds_per_train_step"] = jnp.array(seconds_per_train_step)
+            # Prefix training metrics
+            metrics = {f"training/{k}": v for k, v in metrics.items()}
+            metrics["timing/env_steps_per_second"] = jnp.array(env_steps_per_second)
+            metrics["timing/seconds_per_train_step"] = jnp.array(seconds_per_train_step)
 
             # log metrics
             collection_steps = (
@@ -709,6 +749,7 @@ class Trainer:
                 params = self.extract_model_params_fn(train_state)
                 for i, test_state in enumerate(tester_states):
                     run_key, key = jax.random.split(key)
+                    t_eval_start = time.perf_counter()
                     new_test_state, metrics, rendered = self.testers[i].run(
                         key=run_key,
                         epoch_num=cur_epoch,
@@ -720,19 +761,55 @@ class Trainer:
                         state=test_state,
                         params=params,
                     )
+                    t_eval_end = time.perf_counter()
 
-                    metrics = {k: v.mean() for k, v in metrics.items()}
+                    metrics = {f"eval/{k}": v.mean() for k, v in metrics.items()}
+                    metrics[f"timing/eval__{self.testers[i].name}__seconds"] = (
+                        jnp.array(t_eval_end - t_eval_start)
+                    )
                     self.log_metrics(metrics, cur_epoch, step=collection_steps)
                     if rendered and self.run is not None:
                         self.run.log(
-                            {f"{self.testers[i].name}_game": wandb.Video(rendered)},
+                            {
+                                f"eval/{self.testers[i].name}_game": wandb.Video(
+                                    rendered
+                                )
+                            },
                             step=collection_steps,
                         )
                     tester_states[i] = new_test_state
+
+                # Visual SVERL gallery
+                if self.visualizer is not None:
+                    # Get single-device TrainState and params for verification
+                    single_ts = jax.tree_util.tree_map(lambda x: x[0], train_state)
+                    sd_params = self.extract_model_params_fn(single_ts)
+
+                    viz_key, key = jax.random.split(key)
+                    explanations = self.visualizer.visualize_episode(
+                        sd_params, single_ts, viz_key
+                    )
+                    if self.run is not None:
+                        self.run.log(
+                            {"eval/shapley_gallery": explanations},
+                            step=collection_steps,
+                        )
             # save checkpoint
             # make sure previous save task has finished
             self.checkpoint_manager.wait_until_finished()
             self.save_checkpoint(train_state, cur_epoch)
+
+            epoch_end_time = time.perf_counter()
+            self.log_metrics(
+                {
+                    "timing/seconds_per_epoch": jnp.array(
+                        epoch_end_time - epoch_start_time
+                    )
+                },
+                cur_epoch,
+                step=collection_steps,
+            )
+
             # next epoch
             cur_epoch += 1
 

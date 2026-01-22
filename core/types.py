@@ -36,7 +36,7 @@ EvalFn = Callable[
     [chex.ArrayTree, Params, jax.random.PRNGKey], Tuple[chex.Array, float]
 ]
 LossFn = Callable[
-    [chex.ArrayTree, TrainState, BaseExperience],
+    [chex.ArrayTree, TrainState, BaseExperience, jax.Array],
     Tuple[chex.Array, Tuple[chex.ArrayTree, optax.OptState]],
 ]
 ExtractModelParamsFn = Callable[[TrainState], chex.ArrayTree]

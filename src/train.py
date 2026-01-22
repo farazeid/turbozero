@@ -16,6 +16,7 @@ from core.evaluators.evaluation_fns import (
 )
 from core.evaluators.mcts.action_selection import MuZeroPUCTSelector
 from core.evaluators.mcts.mcts import MCTS
+from core.evaluators.shapley_eval import ShapleyVisualizer
 from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.testing.elo_tester import RobustEloTester
@@ -135,6 +136,18 @@ class Args:
     num_epochs: int = 700
     eval_every: int = 5
 
+    pred_shapley_weight: float = 0.0
+    bhvr_char_weight: float = 0.0
+    bhvr_shapley_weight: float = 0.0
+    shapley_update_ratio: int = 1
+    env_id: str = "go_19x19"
+
+    eval_greedy: bool = False
+    eval_selfplay: bool = False
+
+    behaviour_shapley_approx: bool = True
+    separate_networks: bool = False
+
 
 if __name__ == "__main__":
     os.environ["CUDA_PATH"] = "/usr/local/cuda"
@@ -147,15 +160,83 @@ if __name__ == "__main__":
         handlers=[logging.StreamHandler()],
     )
 
-    env = pgx.make("go_19x19")
+    env = pgx.make(args.env_id)
 
-    resnet = AZResnet(
-        AZResnetConfig(
+    args_dict = vars(args)
+    if args.separate_networks:
+        from core.networks.azresnet import AZResnetSeparate
+
+        # 1. Main Agent (No aux heads)
+        agent_config = AZResnetConfig(
             policy_head_out_size=env.num_actions,
             num_blocks=args.resnet_num_blocks,
             num_channels=args.resnet_num_channels,
+            prediction_shapley_head=False,
+            behaviour_characteristic_head=False,
+            behaviour_shapley_head=False,
         )
-    )
+        agent_net = AZResnet(agent_config)
+
+        # 2. Prediction Shapley Network (If enabled)
+        pred_shap_net = None
+        if args.pred_shapley_weight > 0:
+            pred_config = AZResnetConfig(
+                policy_head_out_size=env.num_actions,
+                num_blocks=args.resnet_num_blocks,
+                num_channels=args.resnet_num_channels,
+                include_policy_head=False,
+                include_value_head=False,
+                prediction_shapley_head=True,
+            )
+            pred_shap_net = AZResnet(pred_config)
+
+        # 3. Behaviour Characteristic Network (If enabled)
+        char_net = None
+        if args.bhvr_char_weight > 0:
+            char_config = AZResnetConfig(
+                policy_head_out_size=env.num_actions,
+                num_blocks=args.resnet_num_blocks,
+                num_channels=args.resnet_num_channels,
+                include_policy_head=False,
+                include_value_head=False,
+                behaviour_characteristic_head=True,
+                behaviour_shapley_approx=args.behaviour_shapley_approx,
+            )
+            char_net = AZResnet(char_config)
+
+        # 4. Behaviour Shapley Network (If enabled)
+        shap_net = None
+        if args.bhvr_shapley_weight > 0:
+            shap_config = AZResnetConfig(
+                policy_head_out_size=env.num_actions,
+                num_blocks=args.resnet_num_blocks,
+                num_channels=args.resnet_num_channels,
+                include_policy_head=False,
+                include_value_head=False,
+                behaviour_shapley_head=True,
+                behaviour_shapley_approx=args.behaviour_shapley_approx,
+            )
+            shap_net = AZResnet(shap_config)
+
+        resnet = AZResnetSeparate(
+            agent=agent_net,
+            prediction_shapley_net=pred_shap_net,
+            behaviour_characteristic_net=char_net,
+            behaviour_shapley_net=shap_net,
+        )
+
+    else:
+        resnet = AZResnet(
+            AZResnetConfig(
+                policy_head_out_size=env.num_actions,
+                num_blocks=args.resnet_num_blocks,
+                num_channels=args.resnet_num_channels,
+                prediction_shapley_head=args.pred_shapley_weight > 0,
+                behaviour_characteristic_head=args.bhvr_char_weight > 0,
+                behaviour_shapley_head=args.bhvr_shapley_weight > 0,
+                behaviour_shapley_approx=args.behaviour_shapley_approx,
+            )
+        )
 
     az_evaluator = AlphaZero(MCTS)(  # type: ignore[operator]
         eval_fn=make_nn_eval_fn(resnet, state_to_nn_input),
@@ -199,38 +280,26 @@ if __name__ == "__main__":
         duration=args.render_duration,
     )
 
-    trainer = Trainer(
-        batch_size=args.batch_size,
-        train_batch_size=args.train_batch_size,
-        warmup_steps=args.warmup_steps,
-        collection_steps_per_epoch=args.collection_steps_per_epoch,
-        train_steps_per_epoch=args.train_steps_per_epoch,
-        nn=resnet,
-        loss_fn=partial(az_default_loss_fn, l2_reg_lambda=args.l2_reg_lambda),
-        optimizer=optax.sgd(
-            learning_rate=optax.piecewise_constant_schedule(
-                init_value=args.learning_rate_0,
-                boundaries_and_scales={
-                    200_000: args.learning_rate_1 / args.learning_rate_0,
-                    400_000: args.learning_rate_2 / args.learning_rate_1,
-                },
-            ),
-            momentum=0.9,
-        ),
-        evaluator=az_evaluator,
-        memory_buffer=replay_memory,
-        max_episode_steps=args.max_episode_steps,
+    visualizer = ShapleyVisualizer(
         env_step_fn=step_fn,
         env_init_fn=init_fn,
         state_to_nn_input_fn=state_to_nn_input,
-        testers=[
+        evaluator=az_evaluator_test,
+    )
+
+    testers = []
+    if args.eval_greedy:
+        testers.append(
             TwoPlayerBaseline(
                 num_episodes=args.tester_num_episodes,
                 baseline_evaluator=greedy_az,
                 render_fn=render_fn,
                 render_dir=".",
                 name="greedy",
-            ),
+            )
+        )
+    if args.eval_selfplay:
+        testers.append(
             RobustEloTester(
                 num_episodes=args.elo_eval_num_episodes,
                 base_elo=args.elo_base,
@@ -239,13 +308,51 @@ if __name__ == "__main__":
                 render_dir=".",
                 league_dir=args.ckpt_dir,
                 name="selfplay",
+            )
+        )
+
+    trainer = Trainer(
+        batch_size=args.batch_size,
+        train_batch_size=args.train_batch_size,
+        warmup_steps=args.warmup_steps,
+        collection_steps_per_epoch=args.collection_steps_per_epoch,
+        train_steps_per_epoch=args.train_steps_per_epoch,
+        nn=resnet,
+        loss_fn=partial(
+            az_default_loss_fn,
+            l2_reg_lambda=args.l2_reg_lambda,
+            pred_shapley_weight=args.pred_shapley_weight,
+            bhvr_char_weight=args.bhvr_char_weight,
+            bhvr_shapley_weight=args.bhvr_shapley_weight,
+            behaviour_shapley_approx=args.behaviour_shapley_approx,
+        ),
+        shapley_update_ratio=args.shapley_update_ratio,
+        visualizer=visualizer,
+        optimizer=optax.chain(
+            optax.clip_by_global_norm(1.0),
+            optax.sgd(
+                learning_rate=optax.piecewise_constant_schedule(
+                    init_value=args.learning_rate_0,
+                    boundaries_and_scales={
+                        200_000: args.learning_rate_1 / args.learning_rate_0,
+                        400_000: args.learning_rate_2 / args.learning_rate_1,
+                    },
+                ),
+                momentum=0.9,
             ),
-        ],
+        ),
+        evaluator=az_evaluator,
+        memory_buffer=replay_memory,
+        max_episode_steps=args.max_episode_steps,
+        env_step_fn=step_fn,
+        env_init_fn=init_fn,
+        state_to_nn_input_fn=state_to_nn_input,
         evaluator_test=az_evaluator_test,
         data_transform_fns=transforms,
         wandb_entity="fastsverl",
         wandb_project_name="dev-go",
         ckpt_dir=args.ckpt_dir,
+        testers=testers,
     )
 
     output = trainer.train_loop(

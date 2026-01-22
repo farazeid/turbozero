@@ -22,9 +22,11 @@ def make_nn_eval_fn(
 
     def eval_fn(state, params, *args):
         # get the policy and value from the neural network
-        policy_logits, value = nn.apply(
-            params, state_to_nn_input_fn(state)[None, ...], train=False
-        )
+        results = nn.apply(params, state_to_nn_input_fn(state)[None, ...], train=False)
+        if hasattr(results, "__iter__") and not isinstance(results, dict):
+            results = results[0]
+        policy_logits = results["policy"]
+        value = results["value"]
         # apply softmax to the policy logits
         return jax.nn.softmax(policy_logits, axis=-1).squeeze(0), value.squeeze()
 
@@ -49,7 +51,13 @@ def make_nn_eval_fn_no_params_callable(
 
     def eval_fn(state, *args):
         # get the policy and value from the neural network
-        policy_logits, value = nn(state_to_nn_input_fn(state)[None, ...])
+        results = nn(state_to_nn_input_fn(state)[None, ...])
+        # If it's a dict, extract. If it's a tuple (older baseline models), unpack.
+        if isinstance(results, dict):
+            policy_logits = results["policy"]
+            value = results["value"]
+        else:
+            policy_logits, value = results[:2]
         # apply softmax to the policy logits
         return jax.nn.softmax(policy_logits, axis=-1).squeeze(0), value.squeeze()
 

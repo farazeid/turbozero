@@ -1,9 +1,10 @@
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
 import chex
 import jax
 import jax.numpy as jnp
 import optax
+from einops import rearrange
 from flax.training.train_state import TrainState
 
 from core.memory.replay_memory import BaseExperience
@@ -65,7 +66,6 @@ def az_default_loss_fn(
     # compute MSE value loss
     value_loss = optax.l2_loss(pred_value.squeeze(), target_value).mean()
 
-    # compute L2 regularization
     l2_reg = l2_reg_lambda * jax.tree_util.tree_reduce(
         lambda x, y: x + y, jax.tree_map(lambda x: (x**2).sum(), params)
     )
@@ -73,4 +73,85 @@ def az_default_loss_fn(
     # total loss
     loss = policy_loss + value_loss + l2_reg
     aux_metrics = {"policy_loss": policy_loss, "value_loss": value_loss}
+    return loss, (aux_metrics, updates)
+
+
+def katago_loss_fn(
+    params: chex.ArrayTree,
+    train_state: TrainState,
+    batch: Dict[str, chex.Array],
+    l2_reg_lambda: float = 0.0001,
+) -> Tuple[chex.Array, Tuple[Dict[str, chex.Array], Dict[str, Any]]]:
+    """Implements the KataGo multi-head loss function.
+
+    Args:
+    - `params`: the parameters of the neural network
+    - `train_state`: flax TrainState
+    - `batch`: dictionary containing inputs and targets
+        - 'binaryInputNCHW', 'globalInputNC', etc.
+    - `l2_reg_lambda`: L2 regularization weight
+
+    Returns:
+    - (loss, (aux_metrics, updates))
+    """
+    variables = (
+        {"params": params, "batch_stats": train_state.batch_stats}
+        if hasattr(train_state, "batch_stats")
+        else {"params": params}
+    )
+    mutables = ["batch_stats"] if hasattr(train_state, "batch_stats") else []
+
+    # get predictions
+    # KataGoNetwork returns (policy_logits, value, ownership, score)
+    (pred_policy, pred_value, pred_ownership, pred_score), updates = (
+        train_state.apply_fn(
+            variables, x=batch["binaryInputNCHW"], train=True, mutable=mutables
+        )
+    )
+
+    # 1. Policy Loss
+    # policyTargetsNCMove is (N, 2, 362) or (N, 362)
+    labels = batch["policyTargetsNCMove"]
+    if len(labels.shape) == 3:
+        # Use second channel (MCTS distribution)
+        labels = rearrange(labels, "b c p -> c b p")[1]
+
+    policy_loss = optax.softmax_cross_entropy(pred_policy, labels).mean()
+
+    # 2. Value Loss
+    # globalTargetsNC contains win/loss info.
+    target_value = batch["globalTargetsNC"][:, 0]
+    value_loss = optax.l2_loss(rearrange(pred_value, "b 1 -> b"), target_value).mean()
+
+    # 3. Ownership Loss
+    # pred_ownership: (N, 19, 19, 1)
+    # target_ownership: (N, 19, 19, 5) - C0 is ownership
+    target_ownership = batch["valueTargetsNCHW"]
+    if target_ownership.shape[-1] > 1:
+        target_ownership = target_ownership[:, :, :, 0:1]
+
+    ownership_loss = optax.l2_loss(pred_ownership, target_ownership).mean()
+
+    # 4. Score Loss
+    # pred_score: (N, 1)
+    # globalTargetsNC: C58 is raw scoremean from neural net
+    target_score = batch["globalTargetsNC"][:, 58]
+    score_loss = optax.l2_loss(rearrange(pred_score, "b 1 -> b"), target_score).mean()
+
+    # 5. L2 Regularization
+    l2_reg = l2_reg_lambda * jax.tree_util.tree_reduce(
+        lambda x, y: x + y, jax.tree_map(lambda x: (x**2).sum(), params)
+    )
+
+    # Total Loss (weighted)
+    loss = policy_loss + value_loss + ownership_loss + score_loss + l2_reg
+
+    aux_metrics = {
+        "loss": loss,
+        "policy_loss": policy_loss,
+        "value_loss": value_loss,
+        "ownership_loss": ownership_loss,
+        "score_loss": score_loss,
+    }
+
     return loss, (aux_metrics, updates)

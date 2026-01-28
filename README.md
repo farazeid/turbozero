@@ -1,3 +1,40 @@
+# KataGo Implementation in JAX/Flax
+
+I have implemented the KataGo neural network architecture and data preparation pipeline. This allows for high-performance training and evaluation on Go 19x19, specifically designed for FastSVERL Shapley value estimation.
+
+## Components & Invocation
+
+### 1. Neural Network Architecture
+
+The KataGo architecture is implemented in `core/networks/katago.py`. It includes bottleneck blocks, global pooling, and multi-head outputs (Policy, Value, Ownership, Score).
+
+**Adjustable Parameters (`KataGoConfig`):**
+
+- `num_blocks`: Number of residual blocks in the trunk (default: 20).
+- `num_channels`: Number of filters in the main trunk (default: 128).
+- `num_mid_channels`: Number of filters in the bottleneck middle layers (default: 128).
+- `bnorm_momentum`: Batch normalization momentum (default: 0.99).
+
+### 2. Data Preparation Pipeline
+
+Official KataGo training data can be downloaded and processed for JAX.
+
+- **Download**: `bash scripts/download_katago_data.sh --latest-n-days <N>`
+  - Adjustable: `--latest-n-days` (Number of latest days to download).
+- **Processing**: `scripts/prepare_katago_npz.py` handles JIT-compatible bit-unpacking and tensor transposition to NHWC.
+  - Adjustable: `batch_size` and `pos_len` (Board size, default 19).
+
+### 3. Verification
+
+Run the following tests to verify the implementation:
+
+- `uv run python tests/test_katago_shapes.py`: Verify network output shapes.
+- `uv run python tests/test_katago_params.py`: Check parameter counts.
+- `uv run python tests/test_katago_loss.py`: Verify loss function logic.
+- `uv run python tests/test_katago_offline.py`: End-to-end integration test with real KataGo data.
+
+---
+
 # Run
 
 ```bash

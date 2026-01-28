@@ -1,0 +1,57 @@
+\section{Empirical illustrations of continuously learning to explain}
+\label{app:parallel}
+
+\begin{figure*}[t]
+    \centering
+
+    % Row 1: Expected Return
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_parallel_return.pdf}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_parallel_return.pdf}
+    \end{subfigure}
+    
+    % Row 2: DQN Loss
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_parallel_dqn_loss.pdf}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_parallel_dqn_loss.pdf}
+    \end{subfigure}
+
+    % Row 3: Behaviour Shapley
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_parallel_policy_approx.pdf}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_parallel_policy_approx.pdf}
+    \end{subfigure}
+
+    % Row 4: outcome Shapley
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_parallel_perf_approx_behaviour.pdf}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_parallel_perf_approx_behaviour.pdf}
+    \end{subfigure}
+
+    % Row 5: prediction Shapley
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_parallel_value_approx.pdf}
+        \caption{\texttt{Mastermind-222}}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_parallel_value_approx.pdf}
+        \caption{\texttt{Gridworld}}
+    \end{subfigure}
+
+    \caption{
+    Approximation accuracy of Shapley values trained in parallel with the agent under explanation-to-agent update ratios of 1:1, 2:1, 10:1, and 50:1 in \texttt{Mastermind-222} (left) and \texttt{Gridworld} (right). Each line represents the mean squared error (MSE) between predicted and exact values, averaged over all states and features. Shaded regions indicate the standard error over 20 runs. The agent's expected return and DQN loss are also shown to illustrate learning dynamics during training.
+    }
+    \label{fig:app_parallel}
+\end{figure*}
+
+We extend the illustration of jointly training a DQN agent and explanation models presented in \cref{fig:parallel} to all explanation types in the domains \texttt{Mastermind-222} and \texttt{Gridworld}. Variability across runs is limited to randomness in the training pipeline, with all experimental conditions fixed and the entire process fully seeded for controlled reproducibility.
+
+\cref{fig:app_parallel} presents the approximation accuracy for the Shapley models across varying update ratios (1:1, 2:1, 10:1, and 50:1), alongside the agent's expected return and DQN loss to track the impact of policy changes during training. Consistent with the findings in \cref{sec:extending_fastsverl}, increasing the update ratio mitigates error spikes during rapid policy shifts, reflecting better alignment between the agent and the explanation models. That is, apart from the behaviour explanation for \texttt{Gridworld}, where varying the update rate has minimal effect on error reduction. This may be due to the already low error magnitudes, suggesting the bottleneck could instead be linked to another source of error, such as the off-policy nature of the data.

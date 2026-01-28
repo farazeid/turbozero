@@ -1,0 +1,205 @@
+\section{Empirical illustrations of FastSVERL's explanation models}
+\label{app:fastsverl_evaluation}
+\vspace{-.5em}
+
+In this section, we extend the empirical illustration of FastSVERL presented in \cref{fig:mastermind_222,fig:hypercub_policy_scaling} by providing results for the complete set of explanation types---behaviour, outcomes, and prediction.
+
+\paragraph{Accuracy.} 
+\cref{fig:app_fastsverl} on the following page shows approximation accuracy as a function of batch updates of gradient descent (training updates) for characteristic and Shapley models applied to a DQN agent across three domains: \texttt{Mastermind-222} (8 features, 53 states), \texttt{Mastermind-333} (15 features, over 100,000 states), and \texttt{Gridworld} (2 features, 7 states). Complete domain descriptions are provided in \cref{app:domains}. Notably, \texttt{Mastermind-333} represents the practical limit of exact Shapley value computation for behaviour and prediction explanations, highlighting FastSVERL's ability to approximate these explanations in substantially larger state spaces. 
+
+Each experimental run is seeded for reproducibility, with variability primarily stemming from sources typical to PyTorch-based training, including weight initialisation and batch sampling. Characteristic models are trained using a single agent instance across all runs. Likewise, Shapley models are always trained with the same agent and characteristic models for each run, avoiding variability introduced by retraining upstream components. 
+
+Consistent with the findings in \cref{subsec:fastsverl_experiments}, all models converge to low approximation error and exhibit clear error propagation from characteristic models to Shapley values.
+
+\begin{figure*}[t]
+    \centering
+
+    % Column 1: Behaviour char
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_policy_char.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_333_policy_char.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_policy_char.pdf}
+    \end{subfigure}
+
+    % Column 2: Behaviour Shapley
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_policy_shapley.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_333_policy_shapley.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_policy_shapley.pdf}
+    \end{subfigure}
+
+    % Column 3: outcome char
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_perf_char.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \rule{0pt}{0pt} % Invisible space for alignment
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_perf_char.pdf}
+    \end{subfigure}
+
+    % Column 4: outcome Shapley
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_perf_shapley.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \rule{0pt}{0pt} % Invisible space for alignment
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_perf_shapley.pdf}
+    \end{subfigure}
+
+    % Column 5: prediction char
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_value_char.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_333_value_char.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_value_char.pdf}
+    \end{subfigure}
+
+    % Column 6: prediction Shapley
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_value_shapley.pdf}
+        \caption{\texttt{Mastermind-222}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_333_value_shapley.pdf}
+        \caption{\texttt{Mastermind-333}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_value_shapley.pdf}
+        \caption{\texttt{Gridworld}}
+    \end{subfigure}
+
+    \caption{
+        How approximation accuracy improves over training updates for FastSVERL's explanation models across \texttt{Mastermind-222} (left), \texttt{Mastermind-333} (middle), and \texttt{Gridworld} (right). Each line shows the mean squared error (MSE) between predicted and exact values, averaged over all states and features. Shaded regions, which are negligible, indicate standard error over 20 runs. As you move down through the rows, downstream models (e.g. the behaviour Shapley model) use exact or approximate upstream models from earlier plots (e.g. the behaviour characteristic). Empty slots correspond to the outcome explanations that cannot feasibly be computed exactly in \texttt{Mastermind-333}.
+    }
+    \label{fig:app_fastsverl}
+\end{figure*}
+
+\clearpage
+
+\begin{figure*}[t]
+    \centering
+    \begin{subfigure}[t]{0.49\textwidth}
+        \includegraphics[width=\linewidth]{plots/hypercube_policy.pdf}
+        \caption{Behaviour}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.49\textwidth}
+        \includegraphics[width=\linewidth]{plots/hypercube_value.pdf}
+        \caption{Prediction}
+    \end{subfigure}
+    \caption{Training batches required to reach a fixed target loss ($0.01$) when approximating characteristic and Shapley values for behaviour and prediction in \texttt{Hypercube}; standard error over 20 runs. Each subplot fixes the number of features $n$ (i.e. dimensions). Bar colour indicates cube side length $l$.
+    }
+    \label{fig:app_hypercube}
+\end{figure*}
+
+\paragraph{Scalability.} 
+We extend the illustration of FastSVERL's scalability presented in \cref{fig:hypercub_policy_scaling} by applying it to prediction explanations in the \texttt{Hypercube} domain. Outcome explanations were not included because exact Shapley values were infeasible to compute for the larger cubes. Variability across runs is limited to randomness in training, with all experimental conditions fixed and the entire process fully seeded for controlled reproducibility. \cref{fig:app_hypercube} shows the training updates required to reach a fixed target loss ($0.01$) for both behaviour and prediction explanations. Consistent with the findings from behaviour explanations, the number of training updates scales approximately polynomially with the number of states, while remaining relatively insensitive to the number of features.
+
+\paragraph{Large-scale convergence results.}
+We now extend the large-scale domain analysis from \cref{tab:large_scale_behaviour} to the prediction and outcome explanation models. As with the behaviour explanations, direct \emph{accuracy} validation is infeasible in these domains. We therefore examine the same three key properties: (1) if the models converge, (2) the stability of that convergence, and (3) if the computational cost remains manageable as domain complexity grows.
+
+\cref{tab:large_scale_prediction} presents the convergence results for the prediction models. Consistent with the findings for the behaviour models, both the characteristic and Shapley models converge to a stable loss, and the number of training updates required remains consistent across the domains.
+
+\begin{table}[h!]
+    \centering
+    \caption{Convergence of prediction models in large-scale \texttt{Mastermind} domains over 10 runs.}
+    \label{tab:large_scale_prediction}
+    \begin{tabular}{llll}
+        \toprule
+        \multirow{2}{*}{\textbf{Domain}} & \multirow{2}{*}{\textbf{Model}} & {\textbf{Updates to Converge}} & {\textbf{Final Loss}} \\
+        & & (Mean $\pm$ Std. Err.) & (Mean $\pm$ Std. Err.) \\
+        \midrule
+        \multirow{2}{*}{Mastermind-443} & Characteristic & $(1.08 \pm 0.06) \times 10^6$ & $(2.54 \pm 0.04) \times 10^{-1}$ \\
+        & Shapley & $(6.01 \pm 0.51) \times 10^5$ & $(1.57 \pm 0.07) \times 10^{-1}$ \\
+        \midrule
+        \multirow{2}{*}{Mastermind-453} & Characteristic & $(1.07 \pm 0.11) \times 10^6$ & $(2.74 \pm 0.04) \times 10^{-1}$ \\
+        & Shapley & $(5.93 \pm 0.46) \times 10^5$ & $(1.77 \pm 0.10) \times 10^{-1}$ \\
+        \midrule
+        \multirow{2}{*}{Mastermind-463} & Characteristic & $(9.88 \pm 0.34) \times 10^5$ & $(3.27 \pm 0.04) \times 10^{-2}$ \\
+        & Shapley & $(9.18 \pm 0.63) \times 10^5$ & $(1.70 \pm 0.06) \times 10^{-1}$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Next, \cref{tab:large_scale_performance} presents the results for the outcome models. For the outcome explanation, we present results only for the Shapley model. The associated characteristic model uses a bootstrapped reinforcement learning objective that does not converge to a fixed value and was instead trained for a fixed number of updates---the same number of updates required to train the agent. The Shapley models were trained using only the off-policy outcome characteristic. The results again show stable and efficient convergence, consistent with the findings in the main body.
+
+\begin{table}[h!]
+    \centering
+    \caption{Convergence of outcome Shapley models in large-scale \texttt{Mastermind} domains over 10 runs.}
+    \label{tab:large_scale_performance}
+    \begin{tabular}{llll}
+        \toprule
+        \multirow{2}{*}{\textbf{Domain}} & \multirow{2}{*}{\textbf{Model}} & {\textbf{Updates to Converge}} & {\textbf{Final Loss}} \\
+        & & (Mean $\pm$ Std. Err.) & (Mean $\pm$ Std. Err.) \\
+        \midrule
+        Mastermind-443 & Shapley & $(6.79 \pm 0.63) \times 10^5$ & $(1.58 \pm 0.07) \times 10^{-1}$ \\
+        \midrule
+        Mastermind-453 & Shapley & $(5.70 \pm 0.44) \times 10^5$ & $(6.33 \pm 0.30) \times 10^{-1}$ \\
+        \midrule
+        Mastermind-463 & Shapley & $(5.56 \pm 0.34) \times 10^5$ & $(7.57 \pm 0.26) \times 10^{-1}$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+To complement the results in the tables above, \cref{fig:app_large_scale_convergence_plots} visualises the full training curves for each model, illustrating the rates of convergence.
+
+\begin{figure*}[t]
+    \centering
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_large_policy_char.pdf}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \rule{0pt}{0pt} % Invisible space for alignment
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_large_value_char.pdf}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_large_policy_shapley.pdf}
+        \caption{Behaviour}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_large_value_shapley.pdf}
+        \caption{Prediction}
+    \end{subfigure}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_large_perf_offpolicy_shapley.pdf}
+        \caption{Outcome}
+    \end{subfigure}
+    \caption{
+    Training loss curves for the characteristic (top row) and Shapley (bottom row) models in the large-scale \texttt{Mastermind} domains. Each line represents the mean loss over training updates, averaged across all three domain sizes (\texttt{Mastermind-443}, \texttt{Mastermind-453}, and \texttt{Mastermind-463}). Shaded regions indicate standard error over 10 runs. The empty slot corresponds to the outcome characteristic model.
+    }
+    \label{fig:app_large_scale_convergence_plots}
+\end{figure*}
+
+\paragraph{Full qualitative results.}
+We extend the qualitative illustration of the framework's behaviour insights in \cref{tab:qualitative_example} by providing the full set of visual explanations in our project's code repository.%
+\footnote{The complete results are available at: \url{https://github.com/djeb20/fastsverl}.}
+This extends the single illustrative example by presenting the behaviour, prediction, and outcome explanations for all states encountered by an optimal policy in each of the large-scale \texttt{Mastermind} domains.

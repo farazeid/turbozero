@@ -1,0 +1,49 @@
+\section{Applying FastSVERL to common reinforcement learning settings}
+\label{sec:extending_fastsverl}
+
+We now discuss approximating Shapley explanations under practical constraints.
+
+% Our introduction to reinforcement learning considered a general framing. In many practical settings, additional constraints arise, such as limited training data or non-stationary policies. In this section, we discuss how to approximate Shapley explanations of reinforcement learning under such constraints.
+
+\textbf{Learning to explain off-policy.}
+FastSVERL trains characteristic and Shapley models using samples from the steady-state distribution of the policy being explained. This distribution is approximated using states encountered by the policy. What if the agent cannot interact with the environment to collect this data, or if the interaction is costly? We then have a more constrained off-policy problem, distinct from the setting previously discussed for the outcome characteristic, which addressed sample-efficient data reuse when new interactions are possible. Here, we propose learning passively by drawing states from the agent's history of interaction and applying importance sampling \citep{Precup2000} to correct the distributional mismatch. For any loss of the form $\mathcal{L}(\beta)~=~\mathbb{E}_{s \sim p^\pi}[\ell(s; \beta)]$, we estimate:
+\begin{equation}\label{eq:offpolicy}
+    \mathcal{L}(\beta) \approx \underset{(s_t, a_t) \sim \mathcal{B}}{\mathbb{E}} \left[ \frac{\pi(s_t, a_t)}{\pi_t(s_t, a_t)} \cdot \ell(s_t; \beta) \right],
+\end{equation}
+where $\pi_t$ denotes the policy used at decision stage $t$ to generate sample $(s_t, a_t)$. The reweighting in \cref{eq:offpolicy} estimates the loss that would have been observed had the data been collected under policy $\pi$. The usefulness of this estimate depends on factors such as whether the buffer contains states visited under $\pi$. We provide a full derivation and discussion of \cref{eq:offpolicy} in \cref{app:off_policy}.
+
+\begin{figure*}[t]
+    \centering
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/main_mastermind_222_offpolicy_policy.pdf}
+        \caption{Behaviour characteristic \\ (off-policy training)}
+        \label{fig:offpolicy_char}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/main_mastermind_222_parallel_value_approx.pdf}
+        \caption{Prediction Shapley \\ (parallel training)}
+        \label{fig:parallel}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/main_mastermind_222_policy_sampling.pdf}
+        \caption{Behaviour Shapley \\ (sampled characteristic)}
+        \label{fig:sampling}
+    \end{subfigure}
+    
+    \caption{
+    Approximation accuracy over training updates in \texttt{Mastermind-222}. Each line shows the mean squared error (MSE) between predicted and exact values, averaged over all states and features. Shaded regions indicate standard error over 20 runs, corrected for variance in agent training \citep{Masson2003}.
+}
+    \label{fig:fastsverl_extensions}
+    \vspace{-1.7em}
+\end{figure*}
+
+We illustrate the impact of importance sampling by training the behaviour characteristic model in \texttt{Mastermind-222} under three conditions: (1) using on-policy data from the final policy, (2) using off-policy data from the agent’s training buffer without importance sampling (IS), and (3) using the same buffer with importance sampling. The results are shown in \cref{fig:offpolicy_char}. Importance sampling lowers approximation error when using the agent's training buffer, as expected, but does not match the accuracy of the on-policy baseline.
+
+\textbf{Continuously learning to explain.}
+FastSVERL explains an agent's behaviour, outcomes, and prediction under a given policy. Yet, in many settings, such as continual learning, we will want to explain an agent as its policy changes over time. Rather than retraining FastSVERL's models when the policy changes, we ask whether jointly updating them with the agent's policy can keep explanations aligned to the policy throughout learning. FastSVERL's approximations can be continuously updated because they use parametric models; in contrast, sampling-based methods would require recomputing explanations from scratch whenever the policy changes. To this end, we propose a training regime in which the interaction data used to update the agent's policy is also used to learn and continuously update the Shapley explanation models.
+
+Once again, we find ourselves in an off-policy context because earlier behaviour policies will have typically generated the data. We therefore apply the importance sampling technique from \cref{eq:offpolicy} to account for off-policy samples. When policy changes are small, as is typical when using algorithms like PPO \citep{Schulman2017}, we expect the explanation models from the previous decision stage to remain closely aligned with the agent's newly updated policy. As a result, jointly updating the explanation models alongside the agent's policy may restore complete alignment.
+
+We illustrate the proposed approach by jointly training a DQN agent, a characteristic model, and a Shapley model for prediction in \texttt{Mastermind-222}. To control how quickly the explanations adapt to the changing policy, we vary the number of gradient descent updates applied to the explanation models, per policy update, using the ratios 1:1, 2:1, 10:1, and 50:1. \cref{fig:parallel} shows the approximation error in the Shapley model throughout training for the various update ratios tested. All configurations start with a low error for the agent's initial (random) policy because actions and value estimates are independent of features; the ground truth contributions already match the near-zero predictions of the randomly initialised Shapley model. As the agent's policy improves, the approximation error spikes for low update ratios (1:1 and 2:1). These spikes coincide with a sharp rise in expected return observed during training (see \cref{app:parallel}), reflecting large policy updates and suggesting that explanation models aligned with the agent's previous policy become misaligned when the policy shifts significantly. However, increasing the update ratio mitigates these spikes: the 10:1 and 50:1 configurations maintain relatively low approximation error throughout. These results suggest that jointly training FastSVERL's models with the agent may allow explanations to remain aligned with a changing policy, provided the update rate is sufficient to track larger shifts.

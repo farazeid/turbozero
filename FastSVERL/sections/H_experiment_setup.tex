@@ -1,0 +1,20 @@
+\section{Experimental setup and compute resources}
+\label{app:experiment_setup}
+
+All experimental configurations, including hyperparameters, training settings, and environment details, are included in the project code's test scripts.%
+\footnote{FastSVERL code is available at: \url{https://github.com/djeb20/fastsverl}.}
+These scripts are designed to produce fully reproducible and identical results for every experiment. The DQN agent used throughout the experiments is based on the implementation from CleanRL \citep{Huang2022}.
+
+The hyperparameters for all agents, characteristic models, and Shapley models were pragmatically chosen without tuning, as the experiments are intended to illustrate FastSVERL's properties rather than benchmark against alternative methods. Initial values were selected, found to be sufficient for learning, and kept constant across experiments unless they were the specific subject of study or directly linked to design choices being evaluated. The only exception to this approach was the choice of the masking value used in behaviour and prediction characteristic models to represent unknown features. Although the theoretical framework permits any value outside the support of $\S$, we found that large magnitude values hindered training stability, possibly due to amplified gradient magnitudes. In contrast, smaller magnitude values, closer to the support of $\S$, resulted in smoother learning and were adopted for all experiments.
+
+Standard errors in all experiments are calculated using the standard error of the mean, corresponding to 1-sigma error bars and shaded areas. To better isolate variability arising from the experimental conditions, and not noise introduced by unrelated stochastic factors, we sometimes apply the correction method proposed by \citet{Masson2003}, which adjusts for run-specific differences that are unrelated to the treatment effect. Specific sources of variability, such as agent initialisation, are detailed alongside each experimental setup in the appendix sections.
+
+All experiments were conducted on a local workstation equipped with the following specifications:
+\begin{itemize}
+    \item Processor: Intel i9-14900K (24 cores, up to 6.0GHz)
+    \item GPU: NVIDIA RTX 4090 (24GB VRAM)
+    \item Memory: 96GB DDR5 RAM
+    \item Storage: 2x1TB NVMe (Samsung 990 EVO) and 4TB SSD (Samsung 870 QVO)
+\end{itemize}
+
+The full research project required substantially more compute than the experiments reported here, including preliminary testing and exploratory experiments not included in the final results.

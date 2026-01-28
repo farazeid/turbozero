@@ -1,0 +1,158 @@
+\section{Sampling-based approximation of characteristic functions}
+\label{app:sampling}
+
+Training characteristic models is a major computational bottleneck in FastSVERL. In \cref{sec:sampling}, we proposed removing this cost by integrating cheap single-sample approximations of characteristic values into the Shapley model loss, demonstrating this for the behaviour characteristic. The same approach can be applied to the prediction characteristic, which also admits a natural sampling-based approximation. 
+
+In this section, we complete the proposal by applying it to all explanation models that rely on either the behaviour or prediction characteristic. We first consider their use in training Shapley models, then turn to sampling the behaviour characteristic in training the outcome characteristic. We conclude with the full set of empirical illustrations of the proposals.
+
+\paragraph{Behaviour Shapley.}
+We train a parametric model $\hat\phi(s, a; \theta)$ to predict the Shapley contributions of each feature of state $s$ to the agent's probability of selecting action $a$. Instead of querying a characteristic model, we replace the characteristic function $\tilde\pi_s^a(\C)$ in the Shapley model loss with a single-sample approximation. At each loss evaluation, a state $s' \sim p^\pi(\cdot \mid s^\C)$ is sampled from the conditional steady-state distribution, and the characteristic value is approximated using $\pi(s', a)$. The model is trained to minimise the following loss:
+\begin{equation} \label{eq:app_sampled_behaviour}
+    \mathcal{L}(\theta) = 
+    \underset{p^\pi(s)}{\mathbb{E}}\,
+    \underset{\text{Unif}(a)}{\mathbb{E}}\,
+    \underset{p(\C)}{\mathbb{E}}\,
+    \underset{s' \sim p^\pi(\cdot \mid s^\C)}{\mathbb{E}}
+    \left| \pi(s', a) - \tilde\pi_s^a(\emptyset) - \sum_{i \in \C} \hat\phi^i(s, a; \theta) \right|^2.
+\end{equation}
+
+After training, the Shapley model's output is corrected to satisfy the efficiency constraint:
+\begin{equation}
+    \phi^i(\tilde\pi_s^a) \approx \hat\phi^i(s, a; \theta) + \frac{1}{|\F|}\left(\pi(s, a) - \tilde\pi_s^a(\emptyset) - \sum_{j \in \F} \hat\phi^j(s, a; \theta)\right).
+\end{equation}
+
+With a sufficiently expressive model class and exact optimisation, the corrected output of the global optimum $\hat\phi(s, a; \theta^*)$ recovers exact Shapley values for all state-action pairs $(s, a)$ such that $p^\pi(s) > 0$ and $a \in \A$.
+
+In practice, we approximate the conditional steady-state distribution $p^\pi(s' \mid s^\C)$ by sampling from a replay buffer containing transitions collected under $\pi$, uniformly selecting states $s'$ such that ${s'}^\C = s^\C$. Alternatively, one could train a parametric model of this distribution \citep{Frye2020}, which may generalise better to sparsely sampled regions but reintroduces the cost of learning an additional model.
+
+The null characteristic value $\tilde\pi_s^a(\emptyset)$ is similarly estimated via Monte Carlo sampling from the steady-state distribution:
+\begin{equation}
+    \tilde\pi_s^a(\emptyset) = \underset{s \sim p^\pi(s)}{\mathbb{E}} \left[\pi(s, a)\right].
+\end{equation}
+This estimate is computationally efficient: it can be computed once by passing the entire replay buffer through the policy network in parallel and averaging the results, then reused across all loss evaluations.
+
+\paragraph{Prediction Shapley.}
+We train a parametric model $\hat\phi(s; \theta): \S \rightarrow \mathbb{R}^{|\F|}$ to predict the Shapley contributions of each feature of state $s$ to the agent’s value estimate $\hat{v}^\pi(s)$. We replace the prediction characteristic $\hat{v}^\pi_s(\C)$ in the Shapley model loss with a single-sample approximation. At each loss evaluation, a state $s' \sim p^\pi(\cdot \mid s^\C)$ is sampled from the conditional steady-state distribution, and the characteristic value is approximated using $\hat{v}^\pi(s')$. The model is trained to minimise the following loss:
+    \begin{equation} \label{eq:app_sampled_value}
+    \mathcal{L}(\theta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}\,\underset{s' \sim p^\pi(\cdot \mid s^\C)}{\mathbb{E}} \left| \hat{v}^\pi(s') - \hat{v}^\pi_s(\emptyset) - \sum_{i \in \C} \hat{\phi}^i(s; \theta) \right|^2.
+\end{equation}
+
+After training, the model output is corrected to satisfy the efficiency constraint:
+\begin{equation}
+    \phi^i(\hat{v}^\pi_s) \approx \hat\phi^i(s; \theta) + \frac{1}{|\F|}\left(\hat{v}^\pi(s) - \hat{v}^\pi_s(\emptyset) - \sum_{j \in \F} \hat\phi^j(s; \theta)\right).
+\end{equation}
+
+With a sufficiently expressive model class and exact optimisation, the corrected output of the global optimum $\hat\phi(s; \theta^*)$ recovers the exact Shapley values for all $(s, \C)$ such that $p^\pi(s) > 0$ and $p(\C) > 0$.
+
+\paragraph{Behaviour convergence proof.}
+We now prove that the learning objective in \cref{eq:app_sampled_behaviour} recovers exact Shapley values at the global optimum. This result generalises to the prediction objective in \cref{eq:app_sampled_value} because they share the same structure.
+
+We make the following assumptions:
+\begin{enumerate}
+    \item The model $\hat\phi(s, a; \theta)$ is selected from a function class expressive enough to represent the true Shapley value function $\phi(\tilde\pi_s^a)$ for all state-action pairs $(s, a)$ such that $p^\pi(s) > 0$.
+    \item The global minimum of the loss $\mathcal{L}(\theta)$ exists and is attained.
+    \item States $s$ are sampled from the steady-state distribution $p^\pi(s)$, actions from the uniform distribution over $\A$, subsets $\C$ from a fixed distribution over all subsets of $\F$, and samples $s' \sim p^\pi(\cdot \mid s^\C)$ from the conditional steady-state distribution.
+\end{enumerate}
+
+For a fixed state-action pair $(s, a)$ such that $p^\pi(s) > 0$, the sampling-based loss in \cref{eq:app_sampled_behaviour} reduces to:
+\begin{equation}
+    \underset{p(\C)}{\mathbb{E}} \, \underset{s' \sim p^\pi(\cdot \mid s^\C)}{\mathbb{E}} \left| \pi(s', a) - \tilde\pi_s^a(\emptyset) - \sum_{i \in \C} \hat\phi^i(s, a; \theta) \right|^2.
+\end{equation}
+Since $\pi(s', a)$ is the only term that depends on $s'$, we may equivalently write:
+\begin{equation}
+    \underset{p(\C)}{\mathbb{E}} \left| \underset{s' \sim p^\pi(\cdot \mid s^\C)}{\mathbb{E}}[\pi(s', a)] - \tilde\pi_s^a(\emptyset) - \sum_{i \in \C} \hat\phi^i(s, a; \theta) \right|^2.
+\end{equation}
+By the definition of the behaviour characteristic function, we have:
+\begin{equation}
+    \underset{p(\C)}{\mathbb{E}} \left| \tilde\pi_s^a(\C) - \tilde\pi_s^a(\emptyset) - \sum_{i \in \C} \hat\phi^i(s, a; \theta) \right|^2.
+\end{equation}
+This expression is identical to the reduced Shapley model loss in \cref{eq:app_reduced_loss}, bringing us to the same point as in the proof presented in \cref{app:fastsverl_shapleys}. The remainder of the proof proceeds identically. By enforcing the efficiency constraint via an additive correction \citep{Ruiz1998},
+\begin{equation}
+    \phi^i(\tilde\pi_s^a) := \hat\phi^i(s, a; \theta) + \frac{1}{|\F|} \left( \pi(s, a) - \tilde\pi_s^a(\emptyset) - \sum_{j \in \F} \hat\phi^j(s, a; \theta) \right),
+\end{equation}
+the unique minimiser of the loss is given by the Shapley values $\phi^i(\tilde\pi_s^a)$ \citep{Charnes1988}. Therefore, the globally optimal parameters $\theta^*$ recover exact Shapley values for all $(s, a)$ such that $p^\pi(s) > 0$.
+
+\hfill$\blacksquare$
+
+\paragraph{Remark.} The sampling-based approximations of the behaviour and prediction Shapley values are unbiased because their objectives recover the original asymptotically unbiased model-based losses in expectation.
+
+\paragraph{Outcome characteristic.} 
+
+The outcome characteristic function $\tilde{v}^\pi_s(\C)$ is defined as the expected return received from state $s$ when the agent’s policy has access only to the features in $\C$:
+\begin{equation}
+    \tilde{v}^\pi_s(\C) \defeq \mathbb{E}_\mu \left[G_t \mid S_t = s\right],
+\end{equation}
+where $\mu$ is a modified policy that selects actions using the behaviour characteristic function $\tilde\pi_s^a(\C)$ when features are unknown in state $s$, and follows the original policy $\pi$ elsewhere.
+
+To estimate $\tilde{v}^\pi_s(\C)$, FastSVERL defines a conditioned policy $\hat\pi(a \mid s; s_e, \C)$ that follows the behaviour characteristic model $\hat\pi(s, a \mid \C; \beta)$ when $s = s_e$, and follows the original policy $\pi$ elsewhere. A parametric value function $V(s \mid s_e, \C; \beta)$ is then trained to predict the expected return under this conditioned policy for each $(s_e, \C)$ pair.
+
+Training this outcome characteristic model requires access to a pre-trained behaviour characteristic model, introducing additional computational cost. To avoid this, we instead bypass the behaviour characteristic model entirely by sampling a state $s' \sim p^\pi(\cdot \mid s_e^\C)$ and using $\pi(s', a)$ as the action probability whenever the conditioned policy $\hat\pi(a \mid s; s_e, \C)$ would otherwise act according to the behaviour characteristic model---that is, when $s = s_e$.
+
+The proposed sampling approach applies only to the on-policy formulation of the outcome characteristic. In this setting, the value function $V(s \mid s_e, \C; \beta)$ is trained using a standard bootstrapped DQN-style loss:
+\begin{equation}
+    \mathcal{L}(\beta) = \underset{(s, r, s', s_e, \C)\sim \mathcal{B}}{\mathbb{E}}\left|r + \gamma V'(s'\,|\, s_e, \C; \beta^-) - V(s\,|\, s_e, \C; \beta)\right|^2,
+\end{equation}
+where the buffer $\mathcal{B}$ contains transitions collected from the conditioned policy when sampling is used to approximate the behaviour characteristic at $s = s_e$.
+
+An off-policy variant was also considered in \cref{subsec:rl_chars}, where a parametric state-action value function $Q(s, a \mid s_e, \C; \beta)$ is trained and the outcome characteristic is recovered as
+\begin{equation}
+    \tilde{v}^\pi_s(\C) \approx \sum_{a \in \A} \hat\pi(s, a \mid s_e, \C) \cdot Q(s, a \mid s_e, \C; \beta).
+\end{equation}
+Since this recovery step requires querying the behaviour characteristic model, which is no longer available under the sampling-based approximation, the method cannot be applied in this setting.
+
+\paragraph{Empirical illustrations.}
+
+\begin{figure*}[t]
+    \centering
+
+    % Row 1: Behaviour Shapley
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_policy_sampling.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_333_policy_sampling.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_policy_sampling.pdf}
+    \end{subfigure}
+
+    % Row 2: prediction Shapley
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_value_sampling.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_333_value_sampling.pdf}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_value_sampling.pdf}
+    \end{subfigure}
+
+    % Row 3: outcome characteristic
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_mastermind_222_perf_sampling.pdf}
+        \caption{\texttt{Mastermind-222}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \rule{0pt}{0pt} % Invisible rule to preserve layout
+        \caption{\texttt{Mastermind-333}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/app_gwb_perf_sampling.pdf}
+        \caption{\texttt{Gridworld}}
+    \end{subfigure}
+    
+    \caption{
+        Approximation accuracy of Shapley and characteristic values trained with sampled, exact or model-based characteristics in \texttt{Mastermind-222} (left), \texttt{Mastermind-333} (middle), and \texttt{Gridworld} (right). The empty slot corresponds to the outcome characteristic that cannot feasibly be computed exactly in \texttt{Mastermind-333}. Each line represents the mean squared error (MSE) between predicted and exact values, averaged over all states and features. Shaded regions indicate standard error over 20 runs. The dashed lines mark the end of pre-training for the characteristic models in the model-based approach.
+    }
+    \label{fig:app_sampling}
+\end{figure*}
+
+We extend the analysis of replacing characteristic models with sampling, as presented in \cref{fig:sampling}, to prediction Shapley models and on-policy outcome characteristic models across \texttt{Mastermind-222}, \texttt{Mastermind-333}, and \texttt{Gridworld}. Variability across runs is limited to randomness in the training process, with all experimental conditions fixed and the entire pipeline fully seeded. Explanation models are trained using a single agent instance across all runs.
+
+\cref{fig:app_sampling} shows the explanation model's losses over cumulative training updates. Consistent with the findings in \cref{sec:sampling}, sampling-based approximations converge faster than their model-based counterparts and eliminate error propagation from characteristic models. However, minimal computational gains are observed for the outcome characteristic, as the cost of training the behaviour characteristic is relatively small compared to the substantial cost of training the outcome characteristic itself. This suggests that while sampling effectively reduces error propagation, its impact on computational efficiency for outcome explanations is limited.

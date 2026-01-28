@@ -24,14 +24,25 @@ Official KataGo training data can be downloaded and processed for JAX.
 - **Processing**: `scripts/prepare_katago_npz.py` handles JIT-compatible bit-unpacking and tensor transposition to NHWC.
   - Adjustable: `batch_size` and `pos_len` (Board size, default 19).
 
-### 3. Verification
+### 3. Shapley Models (FastSVERL)
 
-Run the following tests to verify the implementation:
+The Shapley value estimation models are implemented in `core/networks/shapley.py`.
+
+**Adjustable Parameters (`ShapleyConfig`):**
+
+- `blocks_ratio`: Ratio of residual blocks compared to the trunk (default: 1.0).
+- `multi_action`: Boolean toggle for behavior model. `False` (default) explains a single scalar output; `True` explains all 362 actions.
+
+### 4. Verification (KataGo)
 
 - `uv run python tests/test_katago_shapes.py`: Verify network output shapes.
 - `uv run python tests/test_katago_params.py`: Check parameter counts.
 - `uv run python tests/test_katago_loss.py`: Verify loss function logic.
 - `uv run python tests/test_katago_offline.py`: End-to-end integration test with real KataGo data.
+
+- `uv run python tests/test_shapley_models.py`: Basic shape and W&B logging check.
+- `uv run python tests/test_shapley_alignment.py`: Rigorous check for Efficiency Axiom and spatial shapes in both Scalar/Multi modes.
+- `uv run python tests/test_shapley_loss.py`: End-to-end loss function verification for all model types.
 
 ---
 

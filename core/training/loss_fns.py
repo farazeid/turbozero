@@ -155,3 +155,72 @@ def katago_loss_fn(
     }
 
     return loss, (aux_metrics, updates)
+
+
+def shapley_loss_fn(
+    params: chex.ArrayTree,
+    train_state: TrainState,
+    batch: Dict[str, chex.Array],
+    l2_reg_lambda: float = 0.0001,
+) -> Tuple[chex.Array, Tuple[Dict[str, chex.Array], Dict[str, Any]]]:
+    """Implements the FastSVERL Shapley Model loss function (Equation 10/19).
+
+    This loss trains exactly one Shapley model (Behaviour, Outcome, or Prediction)
+    by comparing its masked spatial sum to the target characteristic values.
+
+    Args:
+    - `params`: parameters of the Shapley model
+    - `train_state`: flax TrainState
+    - `batch`: dictionary containing:
+        - 'observation': (N, H, W, C) input board
+        - 'coalition_mask': (N, H, W, 1) binary mask of known features
+        - 'target_char_vals': (N, num_outputs) characteristic values for current coalition
+        - 'null_char_vals': (N, num_outputs) characteristic values for empty coalition
+    - `l2_reg_lambda`: L2 regularization weight
+
+    Returns:
+    - (loss, (aux_metrics, updates))
+    """
+    variables = (
+        {"params": params, "batch_stats": train_state.batch_stats}
+        if hasattr(train_state, "batch_stats")
+        else {"params": params}
+    )
+    mutables = ["batch_stats"] if hasattr(train_state, "batch_stats") else []
+
+    # Get model output (phi): (N, H, W, num_outputs)
+    phi, updates = train_state.apply_fn(
+        variables,
+        x=batch["observation"],
+        mask=batch["coalition_mask"],
+        train=True,
+        mutable=mutables,
+    )
+
+    # 1. Prediction for each output channel (action/scalar)
+    # Sum spatial attributions over the coalition mask
+    # predictions: (N, num_outputs)
+    predictions = jnp.sum(batch["coalition_mask"] * phi, axis=(1, 2))
+
+    # 2. Target for each output channel
+    # targets: (N, num_outputs)
+    targets = batch["target_char_vals"] - batch["null_char_vals"]
+
+    # 3. Mean Squared Error across batch and output channels
+    # This automatically handles multi-action (362) and scalar (1) cases
+    shapley_loss = jnp.mean(jnp.square(predictions - targets))
+
+    # 4. L2 Regularization
+    l2_reg = l2_reg_lambda * jax.tree_util.tree_reduce(
+        lambda x, y: x + y, jax.tree_map(lambda x: (x**2).sum(), params)
+    )
+
+    loss = shapley_loss + l2_reg
+
+    aux_metrics = {
+        "loss": loss,
+        "shapley_loss": shapley_loss,
+        "l2_reg": l2_reg,
+    }
+
+    return loss, (aux_metrics, updates)

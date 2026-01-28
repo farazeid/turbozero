@@ -2375,6 +2375,15 @@ wheels = [
 ]
 
 [[package]]
+name = "sgfmill"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple/" }
+sdist = { url = "https://files.pythonhosted.org/packages/1b/2b/42bf7cf772fa54458b6e84e6938192f1466b9a95ae203b1d5efa2cedfc53/sgfmill-1.1.1.tar.gz", hash = "sha256:1f44fa6b613acfae23cf7f69985a4a911fc06f772f6c63c0bbfc89044d88f41d", size = 63179, upload-time = "2018-05-20T15:19:02.98Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/ef/cd39e8db4385260b6f2e021dd8908e8f5167bfddce238bdea0e82b2f59c6/sgfmill-1.1.1-py3-none-any.whl", hash = "sha256:759cd843eba647875931d3a10eb329362087b9832f6b49ee85cf8948b0608b3d", size = 27143, upload-time = "2018-05-20T15:19:01.418Z" },
+]
+
+[[package]]
 name = "simplejson"
 version = "3.19.3"
 source = { registry = "https://pypi.org/simple/" }
@@ -2629,6 +2638,18 @@ wheels = [
 ]
 
 [[package]]
+name = "tqdm"
+version = "4.67.1"
+source = { registry = "https://pypi.org/simple/" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737, upload-time = "2024-11-24T20:12:22.481Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
+]
+
+[[package]]
 name = "traitlets"
 version = "5.14.3"
 source = { registry = "https://pypi.org/simple/" }
@@ -2666,6 +2687,8 @@ dependencies = [
     { name = "orbax-checkpoint" },
     { name = "pgx" },
     { name = "pip" },
+    { name = "sgfmill" },
+    { name = "tqdm" },
     { name = "tyro" },
     { name = "wandb" },
 ]
@@ -2701,6 +2724,8 @@ requires-dist = [
     { name = "orbax-checkpoint", specifier = ">=0.10.1,<0.11" },
     { name = "pgx", specifier = ">=2.0.1,<3" },
     { name = "pip", specifier = ">=25.3" },
+    { name = "sgfmill", specifier = ">=1.1.1" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "tyro", specifier = ">=1.0.3" },
     { name = "wandb", specifier = ">=0.18.6,<0.19" },
 ]

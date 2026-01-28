@@ -1,0 +1,3 @@
+[submodule "fastsverl"]
+	path = fastsverl
+	url = https://github.com/djeb20/fastsverl.git

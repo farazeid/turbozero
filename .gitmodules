@@ -1,3 +1,6 @@
 [submodule "fastsverl"]
 	path = fastsverl
 	url = https://github.com/djeb20/fastsverl.git
+[submodule "KataGo"]
+	path = KataGo
+	url = https://github.com/lightvector/KataGo.git

@@ -44,6 +44,81 @@ The Shapley value estimation models are implemented in `core/networks/shapley.py
 - `uv run python tests/test_shapley_alignment.py`: Rigorous check for Efficiency Axiom and spatial shapes in both Scalar/Multi modes.
 - `uv run python tests/test_shapley_loss.py`: End-to-end loss function verification for all model types.
 
+### 5. Dataset Tools (AlphaGo & KataGo Analysis)
+
+Tools for preparing and analyzing specific Go datasets.
+
+**SGF to Trajectory (`scripts/sgf_to_trajectory.py`):**
+Converts SGF games to KataGo-compatible `.npz` trajectories.
+
+- `--sgf`: Path to input SGF file.
+- `--output`: Path to output NPZ file.
+
+**Dataset Statistics (`scripts/log_dataset_stats.py`):**
+Analyzes datasets and logs trajectory statistics/heatmaps to Weights & Biases.
+
+- `--data-path`: Path to NPZ file or directory of NPZ files.
+- `--max-files`: Maximum number of files to process (default: 100).
+- Automatic: The WandB run name suffix is derived from the `data-path` filename or directory name.
+
+### 6. Reproducibility Guide
+
+Follow these steps to reproduce the datasets and analysis used in FastSVERL experiments.
+
+#### 1. KataGo Training Data (Shuffled)
+
+**Derive:**
+
+```bash
+# Download latest N days (e.g., 20)
+bash scripts/download_katago_data.sh --latest-n-days 20
+# Process into NPZ (unpacked)
+uv run python scripts/prepare_katago_npz.py
+```
+
+**Analyze:**
+
+```bash
+uv run python scripts/log_dataset_stats.py --data-path data/katago --max-files 100
+```
+
+_(WandB Run: `dataset_analysis--katago`)_
+
+#### 2. AlphaGo vs Lee Sedol - Game 2 (Full Game)
+
+**Derive:**
+
+```bash
+./scripts/prepare_alphago_game2.sh
+```
+
+**Analyze:**
+
+```bash
+uv run python scripts/log_dataset_stats.py --data-path data/alphago_game2.npz
+```
+
+_(WandB Run: `dataset_analysis--alphago_game2`)_
+
+#### 3. AlphaGo vs Lee Sedol - Game 2 (Up to Move 37)
+
+**Derive:**
+
+```bash
+uv run python scripts/sgf_to_trajectory.py \
+  --sgf data/alphago_lee_sedol_game2.sgf \
+  --output data/alphago_game2_move37.npz \
+  --limit-moves 37
+```
+
+**Analyze:**
+
+```bash
+uv run python scripts/log_dataset_stats.py --data-path data/alphago_game2_move37.npz
+```
+
+_(WandB Run: `dataset_analysis--alphago_game2_move37`)_
+
 ---
 
 # Run

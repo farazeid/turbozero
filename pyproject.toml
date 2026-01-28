@@ -35,6 +35,8 @@ dependencies = [
     "nvidia-cusparse-cu12~=12.4.0 ; sys_platform == 'linux'",
     "nvidia-nccl-cu12~=2.27.0 ; sys_platform == 'linux'",
     "nvidia-nvjitlink-cu12~=12.8.0 ; sys_platform == 'linux'",
+    "sgfmill>=1.1.1",
+    "tqdm>=4.67.1",
 ]
 
 [dependency-groups]

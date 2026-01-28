@@ -1,0 +1,58 @@
+\section{Characteristic models}
+\label{app:fastsverl_chars}
+
+This section presents the learning objectives and convergence results for training the characteristic models for behaviour, prediction, and outcome explanations.
+
+\paragraph{Behaviour.}
+We train a parametric model $\hat\pi(s, a \mid \C; \beta)$ to approximate the characteristic function $\tilde\pi_s^a(\C)$: the expected action-probability $\pi(s, a)$ when only the features in $\C$ are known. The model receives as input a state-action pair $(s, a)$, where features of $s$ not in $\C$ are replaced by a fixed masking value outside the support of $\S$. It is trained to minimise the following loss:
+\begin{equation} \label{eq:app_char_behaviour}
+    \mathcal{L}(\beta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{\text{Unif}(a)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}\left|\pi(s, a) - \hat{\pi}(s, a\,|\,\C; \beta)\right|^2.
+\end{equation}
+With a sufficiently expressive model class and exact optimisation, the global optimum $\hat\pi(s, a \mid \C; \beta^*)$ recovers the exact characteristic value for all triples $(s, a, \C)$ such that $p^\pi(s) > 0$, $a \in \A$ and $p(\C) > 0$:
+\begin{equation}
+    \hat\pi(s, a \mid \C; \beta^*) = \mathbb{E}\left[\pi(S, a) \mid S^\C = s^\C\right] = \tilde\pi_s^a(\C).
+\end{equation}
+
+\paragraph{Prediction.}
+We train a parametric model $\hat{v}(s \mid \C; \beta)$ to approximate the characteristic function $\hat{v}^\pi_s(\C)$: the predicted expected return $\hat{v}^\pi(s)$ when only the features in $\C$ are known. The model receives as input a state $s$, where features not in $\C$ are replaced by a fixed masking value outside the support of $\S$. It is trained to minimise the following loss:
+\begin{equation} \label{eq:app_char_value}
+    \mathcal{L}(\beta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}\left|\hat{v}(s) - \hat{v}(s \mid \C; \beta)\right|^2.
+\end{equation}
+With a sufficiently expressive model class and exact optimisation, the global optimum $\hat{v}(s \mid \C; \beta^*)$ recovers the exact characteristic value for all pairs $(s, \C)$ such that $p^\pi(s) > 0$ and $p(\C) > 0$:
+\begin{equation}
+    \hat{v}(s \mid \C; \beta^*) = \mathbb{E}\left[\hat{v}(S) \mid S^\C = s^\C\right] = \hat{v}_s(\C).
+\end{equation}
+
+\paragraph{Behaviour convergence proof.}
+We now prove that the learning objective in \cref{eq:app_char_behaviour} recovers exact characteristic values at the global optimum. This result generalises to the prediction objective in \cref{eq:app_char_value} because they share the same structure.
+
+We make the following assumptions:
+\begin{enumerate}
+    \item The model $\hat\pi(s, a \mid \C; \beta)$ is selected from a function class expressive enough to represent $\tilde\pi_s^a(\C)$ for all masked inputs corresponding to $(s^\C, a)$ such that $p^\pi(s) > 0$ and $p(\C) > 0$.
+    \item The global minimum of the loss $\mathcal{L}(\beta)$ exists and is attained.
+    \item States $s$ are sampled from the steady-state distribution $p^\pi(s)$, actions from the uniform distribution over $\A$, and subsets from a fixed distribution over all subsets of $\F$.
+\end{enumerate}
+
+We consider the contribution to the loss from a fixed subset $\C$ and action $a$. The full loss is an expectation over such terms. Under this conditioning, the loss reduces to:
+\begin{equation}
+    \underset{p^\pi(s)}{\mathbb{E}} \left[ \left| \pi(s, a) - \hat\pi(s, a \mid \C; \beta) \right|^2 \right],
+\end{equation}
+where $\C$ and $a$ are fixed. Because the model receives masked inputs in which features outside $\C$ are replaced by a fixed value, it produces the same output for all states $s$ that share the same values $s^\C$ on $\C$. As a result, the loss decomposes into disjoint terms over equivalence classes of $s^\C$:
+\begin{equation}
+    \sum_{s^\C} \, p^\pi(s^\C) \, \underset{p^\pi(s \mid s^\C)}{\mathbb{E}} \left[ \left| \pi(s, a) - \hat\pi(s, a \mid \C; \beta) \right|^2 \right],
+\end{equation}
+where $p^\pi(s^\C)$ denotes the marginal distribution over observed feature subsets under $p^\pi(s)$. Each term is a squared-error regression problem in which the model output is constant across the equivalence class. Therefore, the unique minimiser of each such term is the conditional expectation:
+\begin{equation}
+    \hat\pi(s, a \mid \C; \beta^*) = \mathbb{E} \left[ \pi(S, a) \mid S^\C = s^\C \right] = \tilde\pi_s^a(\C),
+\end{equation}
+for all $s$ such that $p^\pi(s^\C) > 0$. 
+
+Since both the subset $\C$ and action $a$ were arbitrary, and the result holds for all equivalence classes $s^\C$ with $p^\pi(s^\C) > 0$, the global minimiser of the full loss recovers exact characteristic values for all $(s, a, \C)$ such that $p^\pi(s) > 0$ and $p(\C) > 0$.
+\hfill$\blacksquare$
+
+\paragraph{Remark.} The characteristic models for behaviour and prediction are trained to minimise an expected squared-error loss. The unique global minimiser of this objective is the true conditional expectation. An estimator that converges to this true mean is, by definition, asymptotically unbiased.
+
+\paragraph{Outcome characteristic convergence.}
+We do not provide a convergence proof for the outcome characteristic model. This component is trained as a value function using standard reinforcement learning techniques, including bootstrapping and temporal-difference updates. In our case, the implementation is based on the DQN algorithm. While convergence guarantees exist for value-based learning in the tabular setting \citep{Watkins1992}, convergence results are generally not known for deep reinforcement learning methods with function approximation. This remains a long-standing open problem in the field. As such, the convergence behaviour of the outcome characteristic model cannot be formally established. Nonetheless, we empirically observe reliable learning across all domains this work considers.
+
+

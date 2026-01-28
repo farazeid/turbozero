@@ -1,0 +1,67 @@
+\section{Background}
+\label{sec:background}
+
+\textbf{Reinforcement learning}~\citep{Sutton2018} models an agent interacting with its environment to achieve desired outcomes. It is commonly formalised as a Markov Decision Process (MDP), defined by the 5-tuple $(\S, \A, p, r, \gamma)$. The environment is initialised in a state $S_0 \in \S$, following initial state distribution $d(s) \defeq \text{Pr}(S_0 = s)$. At each decision stage $t \ge 0$, the agent observes the environment's current state $S_t \in \S$, which we assume can be decomposed into $n$ features $(S_t^1, \dots, S_t^n)$ indexed by $\F = \{1, \dots, n\}$; the agent selects an action $A_t \in \A$; the environment then transitions to state $S_{t+1} \in \S$ according to the transition kernel $p(s' \mid s, a) \defeq \text{Pr}(S_{t+1}=s' \mid S_t=s, A_t=a)$, and emits a scalar reward $R_{t+1} \in \mathbb{R}$ with expected value $r(s, a) = \mathbb{E}[R_{t+1} \mid S_t=s, A_t=a]$. A \textit{policy} $\pi: \S \rightarrow \Delta(\A)$ maps each state to a distribution over actions. The agent's objective is to learn a policy that maximises the discounted sum of future rewards, known as \emph{expected return}, which is captured by the \emph{state value function}:
+\begin{equation}
+    v^\pi(s) \defeq  \mathbb{E}_\pi\left[G_t\right] = \mathbb{E}_\pi\left[\sum_{k=0}^\infty\gamma^k R_{t+k+1} \mid S_t = s\right],
+\end{equation}
+where $\gamma \in [0, 1]$ is a discount factor that weights future rewards. An \emph{optimal policy} is a policy that maximises $v^\pi(s)$ for all $s \in \S$. In practice, reinforcement learning agents can use algorithms such as Deep Q-Networks (DQN) \citep{Mnih2013} and Proximal Policy Optimisation (PPO) \citep{Schulman2017} to learn near-optimal policies and value functions using neural networks. However, such methods generally do not explain the process behind an agent’s behaviour, even though such explanations are often needed in practice.
+
+\textbf{Explaining supervised learning with Shapley values.} 
+One approach to interpreting supervised learning models is to attribute their predictions to the influence of individual input features~\citep{Strumbelj2014, Lundberg2017, Covert2021}. Consider a model $f: \X \rightarrow \mathbb{R}$ and an input $x = (x^1, x^2, \dots, x^n) \in \X$ defined over a set of $n$ features $\F = \{1, \dots, n\}$. To quantify how features contribute to the prediction $f(x)$, we can consider how the model’s output changes when some features are unknown. A \emph{characteristic function} $f_x(\C)$ \citep{Strumbelj2014} represents the model’s expected prediction when only the features in subset $\C \subseteq \F$ are known:
+\begin{equation}\label{eq:sl_char}
+    f_x(\C) = \mathbb{E}\left[f(X) \mid X^\C = x^\C\right],
+\end{equation}
+where $x^\C$ denotes a subset of values $\{x^i : i \in \C\}$. In particular, the difference $f_x(\F) - f_x(\emptyset)$ quantifies the total change in prediction when all features are known versus when none are known. A principled way to distribute this quantity among the features is via Shapley values \citep{Shapley1953}, which assign credit to each feature based on its mean marginal contribution across all possible subsets of features:
+\begin{equation}\label{eq:sl_sv}
+    \phi^i(f_x) = \sum_{\C \subseteq \F \setminus \{i\}} \frac{|\C|! \cdot (|\F| - |\C| - 1)!}{|\F|!} \left[f_x(\C \cup \{i\}) - f_x(\C)\right].
+\end{equation}
+Shapley values give the unique solution that satisfies four axioms formalising the notion of fairly attributing a given prediction among features. Whilst they have strong theoretical guarantees, the cost of computing Shapley values grows exponentially with the number of features. Each characteristic value is an expectation over the input space $\X$, with complexity $\O(|\X|)$. Shapley values sum over $2^n$ such values, one for each subset of features, giving a total cost of $\O(2^n \cdot |\X|)$ per input. As a result, the characteristic values in \cref{eq:sl_char} and the Shapley value sum in \cref{eq:sl_sv} must be approximated in high-dimensional domains.
+
+\textbf{Approximating characteristic values.}
+One common approach to approximating the characteristic function $f_x(\C)$ is to learn a parametric model~$\hat f(x\,|\,\C; \beta)$ that maps an input $x$, with features not in $\C$ replaced by a value outside the support of $\X$, to an approximate characteristic value \citep{Frye2020}. The model is trained to minimise the expected squared error:
+\begin{equation}
+    \mathcal{L}(\beta) = \underset{p(x)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}} \left| f(x) - \hat f(x \mid \C; \beta) \right|^2,
+\end{equation}
+where $p(x)$ is the data distribution and $p(\C)$ is any distribution defined over all feature subsets. This loss cannot reach zero: for a sampled $\C$, different inputs $x$ sharing masked representations $x^\C$ may correspond to different $f(x)$ values. The model cannot recover every target with only the features in $\C$, and instead learns to predict their mean---namely, the characteristic value $f_x(\C)$.
+
+\textbf{Approximating the Shapley value summation.}
+We now describe how to approximate the Shapley summation in \cref{eq:sl_sv}, assuming access to a (possibly approximate) characteristic function $f_x(\C)$. One approach is to learn a parametric model $\hat\phi(x; \theta): \X \rightarrow \mathbb{R}^n$ that predicts the Shapley values for all features of an input $x$. This is the approach taken by FastSHAP \citep{Jethani2021}, which trains a model $\hat\phi(x; \theta)$ using an equivalent characterisation of the Shapley values for a fixed input $x$ as the solution to a constrained least squares problem:
+\begin{equation}\label{eq:sv_wls}
+    \{\phi^i(f_x)\}_{i \in \F} = \underset{\{\phi^i\}_{i \in \F} \in \mathbb{R}^n}{\argmin} \; \underset{\C \sim p(\C)}{\mathbb{E}}\Big|f_x(\C) - f_x(\emptyset) - \sum_{i \in \C} \phi^i \Big|^2
+    \text{ s.t. } \underbrace{\sum_{i=1}^n \phi^i = f_x(\F) - f_x(\emptyset)}_\text{Efficiency constraint}.
+\end{equation}
+Here, the distribution $p(\C)$ samples subsets in proportion to the combinatorial weights used in the Shapley value formula:
+\begin{equation}\label{eq:subsetdist}
+    p(\C) \propto \frac{n - 1}{\binom{n}{|\C|} \cdot |\C| \cdot (n - |\C|)},
+\end{equation}
+for $\C \subset \F$ where $0 < |\C| < n$. The \emph{efficiency constraint} reflects the requirement that the total contribution across features must equal the change in prediction from observing all features versus none. FastSHAP implements this characterisation by training the model $\hat\phi(x; \theta)$ to minimise the expected loss of the least squares objective over the data distribution $p(x)$:
+\begin{equation}\nonumber
+    \mathcal{L}(\theta) = \underset{p(x)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}\Big|f_x(\C) - f_x(\emptyset) - \sum_{i \in \C} \hat{\phi}^i(x; \theta)\Big|^2.
+\end{equation}
+Since the model is unconstrained, a correction term is added post hoc to enforce the efficiency constraint in \cref{eq:sv_wls}:
+\begin{equation}\nonumber
+    \phi^i(f_x) \approx \hat\phi^i(x; \theta) + \frac{1}{n} \Big( f_x(\F) - f_x(\emptyset) - \sum_{j \in \F} \hat\phi^j(x; \theta) \Big).
+\end{equation}
+
+\textbf{Explaining reinforcement learning with Shapley values.}
+Unlike supervised learning, which typically focuses on single predictions, reinforcement learning concerns how an agent sequentially interacts with its environment to achieve desired outcomes. To understand these long-term interactions, it is helpful to distinguish between three explanatory targets \citep{Beechey2025}: \emph{behaviour} (how an agent acts), \emph{outcome} (the consequences of those actions), and \emph{prediction} (estimates of those outcomes). \emph{SVERL} (Shapley Values for Explaining Reinforcement Learning) \citep{Beechey2023, Beechey2025} formalises these elements by attributing them to state features. While outcomes can refer to many consequences of an agent's behaviour, SVERL focuses on expected return, a standard formalisation of outcome in reinforcement learning. For each element, SVERL defines a characteristic function over subsets of features $\C \subseteq \F$, which measures how the agent’s action, expected return, or prediction of expected return changes when only the features in $\C$ are observed. By evaluating how these measurements change across subsets of features, SVERL computes Shapley values to attribute each explanatory element to individual features. We now describe each characteristic function and explanation, beginning with behaviour.
+
+SVERL explains behaviour by measuring how each feature influences the agent’s action choice. The behaviour characteristic function $\tilde\pi_s^a(\C)$ is defined as the expected probability of selecting action $a$ in state $s$ when only the features in $\C$ are known:
+\begin{equation}\label{eq:policychar}
+    \tilde\pi_s^a(\C) \defeq \mathbb{E}\left[\pi(S, a) \mid S^\C = s^\C\right] = \sum_{s \in \S^+} p^\pi(s \mid s^\C)\, \pi(s, a),
+\end{equation}
+where $\S^+$ is the set of non-terminal states.  The distribution $p^\pi(S \mid S^\C = s^\C)$ is the conditional steady-state distribution: the probability that an agent following policy $\pi$ is in state $s$, given that it observes $s^\C$. Shapley values (\cref{eq:sl_sv}) are computed over the behaviour characteristic function to attribute the change in action probability when all features are known versus none, $\tilde\pi_s^a(\F) - \tilde\pi_s^a(\emptyset)$, to the individual features of state $s$.
+
+SVERL explains outcomes by measuring how each feature contributes to the agent’s expected return. The outcome characteristic function $\tilde{v}^\pi_s(\C)$ is defined as the expected return received from state $s$ when the agent’s policy has access only to the features $s^\C$:
+\begin{equation}\label{eq:perfchar}
+    \tilde{v}^\pi_s(\C) \defeq \mathbb{E}_\mu \left[G_t \mid S_t = s\right],
+\end{equation}
+where $\mu$ is a modified policy that selects actions using the behaviour characteristic function $\tilde\pi_s^a(\C)$ when features are unknown in state $s$, and follows the original policy $\pi$ elsewhere. Shapley values computed over the outcome characteristic function attribute the change in expected return across all features, $\tilde{v}^\pi_s(\F) - \tilde{v}^\pi_s(\emptyset)$, to the individual features of state $s$.
+
+SVERL explains prediction by measuring how each feature contributes to the agent's, or an observer's, prediction of the agent's expected return $\hat{v}^\pi(s)$, which estimates the true expected return $v^\pi(s)$. The prediction characteristic function $\hat{v}^\pi_s(\C)$ function is defined as the predicted expected return from state $s$ when only the features in $\C$ are known:
+\begin{equation}\label{eq:valuechar}
+    \hat{v}^\pi_s(\C) \defeq \mathbb{E}\left[\hat{v}^\pi(S) \mid S^\C = s^\C\right] = \sum_{s \in \S^+} p^\pi(s \mid s^\C)\, \hat{v}^\pi(s).
+\end{equation}
+Shapley values computed over this function attribute the change in predicted expected return across all features, $\hat{v}^\pi_s(\F) - \hat{v}^\pi_s(\emptyset)$, to the individual features of state $s$.
+

@@ -1,0 +1,167 @@
+\section{Approximating Shapley values in reinforcement learning}
+\label{sec:fastsverl}
+
+SVERL provides a rigorous and comprehensive framework for explaining reinforcement learning agents, but exact computation is impractical for most real-world problems. Each characteristic value is an expectation over the state space $\S$, and Shapley values sum these values over all possible combinations of features $\F$, resulting in a total cost of $\O(2^{|\F|} \cdot |\S|)$ per explanation. In high-dimensional settings, exact computation is infeasible, necessitating scalable approximation methods for both (1) the Shapley value sum and (2) the characteristic functions that underpin each explanation.
+
+\subsection{Approximating the Shapley value summation in reinforcement learning}
+\label{subsec:rl_sv}
+
+We begin by considering how to approximate the Shapley value sum (\cref{eq:sl_sv}). Given a characteristic function for each type of explanation, the computation proceeds identically, allowing a single approximation method to be used across all three explanation types. 
+
+In supervised learning, a common approach to estimate the Shapley value sum is via Monte Carlo sampling, averaging marginal contributions over randomly selected subsets $\C \subseteq \F$ \citep{Strumbelj2014, Lundberg2017}. However, such sampling estimates would not generalise across states and would need to be recomputed from scratch whenever the agent’s policy changes. As a result, this approach would be inefficient for repeated explanations of evolving policies. We therefore do not pursue it here. Instead, we propose learning a parametric model that estimates the Shapley value contributions for all states. Our approach amortises the approximation cost across states and enables continual refinement of explanations under changing policies. We illustrate the method using behaviour explanations; we provide analogous loss functions for outcome and prediction explanations in \cref{app:fastsverl_shapleys}.
+
+Specifically, we learn a parametric model $\hat\phi(s, a; \theta): \S \times \A \rightarrow \mathbb{R}^{|\F|}$, with parameters $\theta$, to estimate the Shapley contributions of all features of state $s$ to the probability of selecting action $a$. We refer to models that predict Shapley values as \emph{Shapley models}. Following FastSHAP \citep{Jethani2021}, we adopt the characterisation of Shapley values in \cref{eq:sv_wls} as the solution to a weighted least-squares problem, and train the Shapley model by minimising this loss:
+\begin{equation}\label{eq:fastsverl}
+    \mathcal{L}(\theta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{\text{Unif}(a)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}{\Big|\tilde\pi_s^a(\C) - \tilde\pi_s^a(\emptyset) - \sum_{i\in\C}{\hat\phi^i(s, a; \theta)}\Big|^2}.
+\end{equation}
+Here, $p^\pi(s)$ denotes the steady-state distribution of the policy that the characteristic function $\tilde\pi_s^a(\C)$ is defined over. The distribution $\text{Unif}(a)$ represents a uniform distribution over actions, and subsets $\C$ are drawn from the distribution in \cref{eq:subsetdist}. Because $p^\pi(s)$ is not directly accessible, we approximate the expectation by sampling from states encountered while following $\pi$. Since the model is unconstrained, we add a post hoc correction to enforce the efficiency constraint in \cref{eq:sv_wls}:
+\begin{equation}
+    \phi^i(\tilde\pi_s^a) \approx \hat\phi^i(s, a; \theta) + \frac{1}{|\F|}\Big(\pi(s, a) - \tilde\pi_s^a(\emptyset) - \sum_{j \in \F}{\hat\phi^j(s, a; \theta)}\Big).
+\end{equation}
+In \cref{app:fastsverl_shapleys}, we prove that with a sufficiently expressive model class, the corrected output of the global optimum $\hat\phi(s, a; \theta^*)$ recovers exact and unbiased Shapley values for all state-action pairs $(s, a)$ such that $p^\pi(s) > 0$ and $a \in \A$. By substituting the appropriate characteristic function into the loss in \cref{eq:fastsverl}, the same model architecture and training procedure can be used across all SVERL explanations of behaviour, outcome, and prediction.
+
+\subsection{Approximating characteristic functions in reinforcement learning}
+\label{subsec:rl_chars}
+
+SVERL explanations rely on a characteristic function defined as an expectation over the state space, which is infeasible to compute exactly in high-dimensional domains. We begin by considering how to approximate these functions for explaining behaviour and prediction, which share the same structure, before turning to explaining outcomes, which requires a different approach.
+
+The \textbf{behaviour characteristic function} $\tilde\pi_s^a(\C)$ in \cref{eq:policychar} is the expected probability of taking action $a$ in state $s$, given only the features in subset $\C$. One possible approach is to estimate it via Monte Carlo sampling, drawing samples from the conditional steady-state distribution $p^\pi(s \mid s^\C)$ \citep{Frye2020}. However, such estimates would not generalise across states or feature subsets, making them inefficient for repeated explanations. We instead, we propose training a parametric model $\hat\pi(s, a\,|\,\C; \beta)$, with parameters $\beta$, to estimate the characteristic function, replacing features of $s$ not in $\C$ with a value outside the support of $\S$, minimising the expected squared error:
+\begin{equation}\label{eq:fastsverl_policy}
+    \mathcal{L}(\beta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{\text{Unif}(a)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}\left|\pi(s, a) - \hat{\pi}(s, a\,|\,\C; \beta)\right|^2.
+\end{equation}
+This approach amortises the approximation cost across multiple states and feature subsets. The model cannot recover the exact target $\pi(s, a)$ from partial input because different states can share the same values on a subset $\C$. It instead learns to predict their mean: the characteristic function $\pi_s^a(\C)$. In \cref{app:fastsverl_chars}, we prove that with a sufficiently expressive model class, the global optimum $\hat\pi(s, a \mid \C; \beta^*)$ recovers the exact and unbiased characteristic values for all triples $(s, a, \C)$ such that $p^\pi(s) > 0$, $a \in \A$, and $p(\C) > 0$. 
+
+The \textbf{prediction characteristic function} $\hat{v}^\pi_s(\C)$ shares the same conditional expectation structure but uses $\hat{v}^\pi(s)$ as the prediction target. We propose approximating it using the same parametric modelling approach, minimising the expected squared error:
+\begin{equation}
+    \mathcal{L}(\beta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}{\left|\hat{v}^\pi(s) - \hat v(s\,|\,\C; \beta)\right|^2}.
+\end{equation}
+
+For the \textbf{outcome characteristic function} $\tilde{v}^\pi_s(\C)$, defined as the expected return from a state $s_e$ when the agent follows a modified policy $\mu$ that selects actions using the behaviour characteristic $\tilde\pi_s^a(\C)$ at $s_e$ and the original policy $\pi$ at all other states, we can use the parametric approximation of $\tilde\pi_s^a(\C)$ from earlier, which reduces the challenge to estimating expected returns under the policy $\mu$ across many $(s_e, \C)$ pairs.
+
+The outcome characteristic $\tilde{v}^\pi_s(\C)$ highlights the unique challenges posed by the sequential dynamics of reinforcement learning. For a fixed state $s_e$ and feature subset $\C$, the characteristic can be estimated using standard reinforcement learning techniques. However, estimating this quantity for all $(s_e, \C)$ pairs amounts to solving $2^{|\F|} \times |\S|$ separate optimisation problems. To address this, we define a single conditioned policy $\hat\pi(a \mid s; s_e, \C)$ that behaves according to $\tilde\pi_s^a(\C)$ when the agent's current state $s$ matches the state-to-be-explained $s_e$, and otherwise follows the original policy $\pi$. This conditioned policy enables us to parametrise the agent's behaviour across all states $s$ and actions $a$ for any $(s_e, \C)$ pair. We then introduce a parametric value function $V(s \mid s_e, \C; \beta)$ to estimate expected returns under the conditioned policy, amortising estimation of $\tilde{v}^\pi_s(\C)$ across all $(s_e, \C)$ pairs.
+
+To estimate $V(s \mid s_e, \C; \beta)$, we consider the strengths and limitations of two general strategies from reinforcement learning. \emph{Off-policy methods} can reuse data from earlier policies but may include few or no transitions under the policy $\hat\pi(a \mid s; s_e, \C)$; \emph{on-policy methods} avoid this difficulty by collecting new data from $\hat\pi$ at the cost of additional interaction with the environment. Both strategies have advantages; we present one representative approach for each. For clarity, we use simple DQN-style losses \citep{Mnih2013}, but more advanced value-based methods can also be applied. 
+
+For on-policy learning, we minimise the difference between the current state-value estimate $V(s\,|\, s_e, \C; \beta)$ and a target computed from the bootstrapped return:
+\begin{equation}
+\mathcal{L}(\beta) = \underset{(s, r, s', s_e, \C)\sim \mathcal{B}}{\mathbb{E}}\left|r + \gamma V'(s'\,|\, s_e, \C; \beta^-) - V(s\,|\, s_e, \C; \beta)\right|^2,
+\end{equation}
+where $\mathcal{B}$ contains transitions sampled from the conditioned policy, and $V'$ is a target network with periodically updated parameters. To populate $\mathcal{B}$, consider collecting a single transition at decision stage $t$: the agent is in state $s_t$, and separately, a state-to-be-explained $s_e$ and feature subset $\C$ are sampled (e.g. from a replay buffer and uniform distribution, respectively). Conditioning on the sampled $s_e$ and $\C$ collapses the single conditioned policy $\hat\pi(a \mid s; s_e, \C)$ into a standard policy for this step. The agent takes an action $a_t$ based on this policy: if its current state $s_t$ happens to be the state being explained, $s_e$, it acts according to the behaviour characteristic model (\cref{eq:fastsverl_policy}); otherwise, it acts according to its original policy $\pi$. This action produces a single transition $(s_t, a_t, r_{t+1}, s_{t+1})$, which is stored in buffer $\mathcal{B}$.
+
+For off-policy learning, we instead learn a state-action value function $Q(s, a \mid s_e, \C; \beta)$ to bootstrap using actions sampled from the conditioned policy $\hat\pi(a \mid s; s_e, \C)$ by optimising the following objective:
+\begin{equation}
+\mathcal{L}(\beta) = \underset{(s, a, r, s')\sim \mathcal{B}}{\mathbb{E}}\,\underset{a' \sim \hat\pi(\cdot \mid s')}{\mathbb{E}}\,\underset{p^\pi(s_e)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}{\left|r + \gamma Q'(s', a' \mid s_e, \C;\beta^-) - Q(s, a \mid s_e, \C; \beta)\right|^2}.
+\end{equation}
+Here, the buffer $\mathcal{B}$ contains transitions sampled from some other policy. The corresponding outcome characteristic is then recovered by:
+\begin{equation}
+\tilde{v}^\pi_s(\C) \approx \sum_{a \in \A} \hat\pi(s, a \mid s_e, \C) \cdot Q(s, a \mid s_e, \C; \beta).
+\end{equation}
+
+Together, these approximation techniques form the basis of a scalable framework for generating Shapley-based explanations in reinforcement learning. We call this framework \emph{FastSVERL.}
+
+\vspace{-.3em}
+\subsection{Empirical illustration}
+\label{subsec:fastsverl_experiments}
+
+We illustrate the use of FastSVERL in multiple domains, guided by three questions on accuracy, efficiency, and scalability: (1) How well can the proposed models learn to approximate characteristic functions and Shapley values? (2) How many training updates are required to reach a given level of approximation error? (3) How does the computational cost of the approximation scale with the number of states and features in an environment? 
+
+\begin{figure*}[t]
+    \centering
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/main_mastermind_222_policy_char.pdf}
+        \caption{Behaviour characteristic}
+        \label{fig:policy_char}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/main_mastermind_222_perf_char.pdf}
+        \caption{Outcome characteristic}
+        \label{fig:perf_char}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \includegraphics[width=\linewidth]{plots/main_mastermind_222_perf_shapley.pdf}
+        \caption{Outcome Shapley values}
+        \label{fig:perf_shapley}
+    \end{subfigure}
+    \caption{
+        How approximation accuracy improves with training updates in \texttt{Mastermind-222}. Shaded regions, which are negligible, indicate standard error over 20 runs. As we progress from plot (a) to (b) to (c), downstream models use exact or approximate upstream models from earlier plots.
+    }
+    \label{fig:mastermind_222}
+    \vspace{-1.5em}
+\end{figure*}
+
+We start by focusing on outcome explanations, a natural choice because they depend on three components---the behaviour characteristic, the outcome characteristic, and Shapley values---that together span the key parametric models and loss functions introduced in \cref{subsec:rl_chars,subsec:rl_sv}. We approximate all three components for a DQN agent in the \texttt{Mastermind-222} domain used by \citet{Beechey2025}. In the main paper, we present experiments on a subset of explanation types and domains, focusing on \texttt{Mastermind-222}, with eight features and 53 states, due to its tractability for exact Shapley value computation. In the appendix, analogous results for all explanation types, additional domains, and complete domain descriptions are provided, including experiments in larger domains where exact computation remains feasible only for behaviour and prediction explanations.
+
+\cref{fig:mastermind_222} shows the mean squared error (MSE) between predicted and exact values for (a) the behaviour characteristic, (b) outcome characteristic, and (c) outcome Shapley values, averaged over all states and features, plotted against training updates. For the outcome characteristic, we include both on-policy and off-policy training regimes. For all downstream models, we present results using exact or approximate upstream components (e.g. the outcome characteristic trained using the exact or approximate behaviour characteristic), to reveal how errors propagate through model approximations.
+
+\begin{wrapfigure}{r}{0.50\textwidth}
+    \centering
+    \vspace{-2em}
+    \includegraphics[width=\linewidth]{plots/hypercube_policy.pdf}
+    \vspace{-1.1em}
+    \caption{Training updates (mean $\pm$ standard error over 20 runs) needed to reach a fixed target loss (0.01) when approximating behaviour explanations in \texttt{Hypercube}. Each subplot fixes the number of features $n$ (i.e. dimensions). Bar colour indicates cube side length $l$.
+    }
+    \label{fig:hypercub_policy_scaling}
+    \vspace{-2em}
+\end{wrapfigure}
+
+All three models converge to low approximation error ($<0.01$). As expected, downstream models that rely on approximated characteristics---rather than exact ones---converge to less accurate solutions, illustrating how errors in upstream components degrade downstream performance. For the outcome characteristic, off-policy training converges faster than on-policy training, which is expected given that it reuses the original agent's training experience rather than collecting new transitions from the conditioned policy. Whilst the improvement is substantial, off-policy learning is effective only when the stored experience sufficiently covers states relevant to the conditioned policy. 
+
+We now examine how FastSVERL's approximations scale with domain size in \texttt{Hypercube}, an $n$-dimensional gridworld where the cube's dimension $n$ and side length $l$ control the number of states ($l^n$) and features ($n$). \cref{fig:hypercub_policy_scaling} shows how the training updates required to reach a target loss of $0.01$ for the behaviour characteristic, and corresponding Shapley values, scales with the number of states and features. To isolate how the Shapley model scales without errors propagating from the behaviour characteristic, we train it using exact characteristic values.
+
+For a fixed number of features (i.e. cube dimension), the training cost increases roughly linearly on the log-log scale, indicating approximate polynomial growth as the number of states increases. In contrast, given a fixed number of states, increasing the number of features has little effect on training cost, suggesting that states---not features---are the dominant driver of computational cost. Finally, the behaviour characteristic requires more updates than the Shapley model, possibly because it must predict values for all feature subsets at each state ($|\S| \times 2^n$). In contrast, the Shapley model predicts values per feature and state ($|\S| \times n$).
+
+% If we need to save space, we can move the characteristic results to the appendix.
+\begin{table}[htbp]
+    \vspace{-1em}
+    \centering
+    \footnotesize
+    \setlength{\tabcolsep}{3.5pt}
+    \caption{Convergence of behaviour models in large-scale \texttt{Mastermind} domains over 10 runs.}
+    \label{tab:large_scale_behaviour}
+    \begin{tabular}{llll}
+        \toprule
+        \multirow{2}{*}{\textbf{Domain}} & \multirow{2}{*}{\textbf{Model}} & {\textbf{Updates to Converge}} & {\textbf{Final Loss}} \\
+         & & (Mean $\pm$ Std. Err.) & (Mean $\pm$ Std. Err.) \\
+        \midrule
+        Mastermind-443 & Characteristic & $(1.10 \pm 0.11) \times 10^6$ & $(3.83 \pm 0.02) \times 10^{-3}$ \\
+        (24 features, $\ge 4.3 \times 10^7$ states) & Shapley & $(7.31 \pm 0.68) \times 10^5$ & $(1.30 \pm 0.04) \times 10^{-3}$ \\
+        \midrule
+        Mastermind-453 & Characteristic & $(1.29 \pm 0.11) \times 10^6$ & $(3.60 \pm 0.02) \times 10^{-3}$ \\
+        (30 features, $\ge 3.5 \times 10^9$ states) & Shapley & $(7.84 \pm 0.49) \times 10^5$ & $(0.96 \pm 0.03) \times 10^{-3}$ \\
+        \midrule
+        Mastermind-463 & Characteristic & $(1.18 \pm 0.12) \times 10^6$ & $(3.70 \pm 0.01) \times 10^{-3}$ \\
+        (36 features, $\ge 2.8 \times 10^{11}$ states) & Shapley & $(7.12 \pm 0.51) \times 10^5$ & $(1.88 \pm 0.04) \times 10^{-3}$ \\
+        \bottomrule
+    \end{tabular}
+    \vspace{-.5em}
+\end{table}
+
+While \emph{accuracy} validation requires small domains with computable ground truths, it is also important to investigate FastSVERL's approximations at scale. We now examine three key properties in substantially larger \texttt{Mastermind} domains: (1) if the models converge, (2) the stability of that convergence, and (3) if the computational cost remains manageable. \cref{tab:large_scale_behaviour} shows that both the characteristic and Shapley models converge and that this convergence is stable and reliable across runs. Most importantly, the number of training updates required remains consistent even as the number of states and features grows. Note that this training loss is not a measure of ground-truth accuracy. For the characteristic model, the loss is designed to converge to a non-zero value as it learns an expectation over unknown features. For the Shapley model, convergence to zero indicates it has learned to explain the \emph{approximations} from the characteristic model, not necessarily the true values.
+
+While ground-truth accuracy cannot be validated, we demonstrate example behavioural insights the framework can produce by visualising an explanation for a trained \texttt{Mastermind-463} agent in \cref{tab:qualitative_example}. In this version of the code-breaking game, an agent must guess a hidden 4-letter code, drawn from a 3-letter alphabet. Each guess receives clues for the number of correct letters in the correct position (Clue 2) and wrong position (Clue 1, full details in \cref{app:domains}). The table shows a board state where darker blue indicates a feature's positive contribution to the probability of the agent's next action (in green).
+
+\begin{wraptable}{r}{0.5\textwidth}
+    \vspace{-1em}
+    \centering
+    \setlength{\tabcolsep}{2pt}
+    \caption{Behaviour Shapley values in one sample state of Mastermind-463.}
+    \label{tab:qualitative_example}
+    \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{c c c c c c c}
+        \toprule
+        \textbf{Guess} & \textbf{Clue 1} & \textbf{Pos 1} & \textbf{Pos 2} & \textbf{Pos 3} & \textbf{Pos 4} & \textbf{Clue 2} \\
+        \midrule
+        \textbf{6} & \cellcolor{white} & \cellcolor{white} & \cellcolor{white} & \cellcolor{white} & \cellcolor{white} & \cellcolor{white} \\
+        \textbf{5} & \cellcolor{white} & \cellcolor{white}\textcolor{d_green}{C} & \cellcolor{white}\textcolor{d_green}{C} & \cellcolor{white}\textcolor{d_green}{C} & \cellcolor{white}\textcolor{d_green}{B} & \cellcolor{white} \\
+        \textbf{4} & \cellcolor{l_blue}2 & \cellcolor{m_blue}B & \cellcolor{s_blue}C & \cellcolor{m_blue}C & \cellcolor{l_blue}C & \cellcolor{l_blue}2 \\
+        \textbf{3} & \cellcolor{white}2 & \cellcolor{l_blue}C & \cellcolor{m_blue}B & \cellcolor{white}C & \cellcolor{l_blue}C & \cellcolor{white}2 \\
+        \textbf{2} & \cellcolor{white}0 & \cellcolor{white}C & \cellcolor{l_blue}C & \cellcolor{l_blue}C & \cellcolor{white}C & \cellcolor{l_blue}3 \\
+        \textbf{1} & \cellcolor{white}0 & \cellcolor{white}A & \cellcolor{white}A & \cellcolor{white}C & \cellcolor{white}A & \cellcolor{white}1 \\
+        \bottomrule
+        \end{tabular}
+        \vspace{-1.5em}
+\end{wraptable}
+
+Taking care not to over-interpret~\cite{Beechey2025}, the explanation appears to align with a logical, high-level strategy for the game. First, the most influential features (blue cells) are from recent guesses (2-4), which are sufficient to deduce that the code is a permutation of (B, C, C, C), while the now-redundant first guess has a neutral influence. Secondly, the unused guess slots are correctly assigned a neutral influence. This reveals an important insight about the agent's behaviour: the optimal policy does not require these slots. Importantly, it also suggests the approximation satisfies the nullity axiom of Shapley values by assigning zero contribution to irrelevant features.

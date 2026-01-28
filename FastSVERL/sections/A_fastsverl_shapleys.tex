@@ -1,0 +1,71 @@
+\section{Shapley models}
+\label{app:fastsverl_shapleys}
+
+This section presents the learning objectives used to train the Shapley models for all three explanation types: behaviour, outcomes, and prediction. For each case, we adopt the characterisation of Shapley values as the solution to a weighted least squares problem (see \cref{eq:sv_wls}) and construct a corresponding loss function. A general convergence result applicable to all three is provided at the end of the section.
+
+\paragraph{Behaviour.}
+We train a parametric model $\hat\phi(s, a; \theta): \S \times \A \rightarrow \mathbb{R}^{|\F|}$ to predict the Shapley contributions of each feature of state $s$ to the agent's probability of selecting action $a$. The model is trained to minimise the following loss:
+\begin{equation}\label{eq:app_fastsv_behaviour}
+    \mathcal{L}(\theta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{\text{Unif}(a)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}{\Big|\tilde\pi_s^a(\C) - \tilde\pi_s^a(\emptyset) - \sum_{i\in\C}{\hat\phi^i(s, a; \theta)}\Big|^2}.
+\end{equation}
+After training, the model output is corrected to enforce the efficiency constraint:
+\begin{equation}
+    \phi^i(\tilde\pi_s^a) \approx \hat\phi^i(s, a; \theta) + \frac{1}{|\F|}\left(\pi(s, a) - \tilde\pi_s^a(\emptyset) - \sum_{j \in \F}{\hat\phi^j(s, a; \theta)}\right).
+\end{equation}
+With a sufficiently expressive model class and exact optimisation, the corrected output of the global optimum $\hat\phi(s, a; \theta^*)$ recovers exact Shapley values for all state-action pairs $(s, a)$ such that $p^\pi(s) > 0$ and $a \in \A$.
+
+\paragraph{Outcome.}
+We train a parametric model $\hat\phi(s; \theta): \S \rightarrow \mathbb{R}^{|\F|}$ to predict the Shapley contributions of each feature of state $s$ to the agent’s expected return $v^\pi(s)$. The model is trained to minimise the following loss:
+\begin{equation}\label{eq:app_fastsv_performance}
+    \mathcal{L}(\theta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}{\Big|\tilde{v}^\pi_s(\C) - \tilde{v}^\pi_s(\emptyset) - \sum_{i\in\C}{\hat\phi^i(s; \theta)}\Big|^2}.
+\end{equation}
+After training, the model output is corrected to enforce the efficiency constraint:
+\begin{equation}
+    \phi^i(\tilde{v}^\pi_s) \approx \hat\phi^i(s; \theta) + \frac{1}{|\F|}\left(v^\pi(s) - \tilde{v}^\pi_s(\emptyset) - \sum_{j \in \F}{\hat\phi^j(s; \theta)}\right).
+\end{equation}
+With a sufficiently expressive model class, the corrected output of the global optimum $\hat\phi(s; \theta^*)$ recovers exact Shapley values for all states $s$ such that $p^\pi(s) > 0$.
+
+\paragraph{Prediction.}
+We train a parametric model $\hat\phi(s; \theta): \S \rightarrow \mathbb{R}^{|\F|}$ to estimate the Shapley contributions of each feature of state $s$ to a prediction of the agent’s expected return $\hat{v}^\pi(s)$. The model is trained to minimise the following loss:
+\begin{equation}\label{eq:app_fastsv_value}
+    \mathcal{L}(\theta) = \underset{p^\pi(s)}{\mathbb{E}}\,\underset{p(\C)}{\mathbb{E}}{\Big|\hat{v}^\pi_s(\C) - \hat{v}^\pi_s(\emptyset) - \sum_{i\in\C}{\hat\phi^i(s; \theta)}\Big|^2}.
+\end{equation}
+After training, the model output is corrected to enforce the efficiency constraint:
+\begin{equation}
+    \phi^i(\hat{v}^\pi_s) \approx \hat\phi^i(s; \theta) + \frac{1}{|\F|}\left(\hat{v}^\pi(s) - \hat{v}^\pi_s(\emptyset) - \sum_{j \in \F}{\hat\phi^j(s; \theta)}\right).
+\end{equation}
+With a sufficiently expressive model class, the corrected output of the global optimum $\hat\phi(s; \theta^*)$ recovers exact Shapley values for all states $s$ such that $p^\pi(s) > 0$.
+
+\paragraph{Convergence proof.}
+
+We now prove that the learning objective in \cref{eq:app_fastsv_behaviour} recovers exact Shapley values at the global optimum. This result generalises to the prediction and outcome objectives because they share the same structure.
+
+We make the following assumptions:
+\begin{enumerate}
+    \item The model $\hat\phi(s, a; \theta)$ is selected from a function class expressive enough to represent the true Shapley value function $\phi(\tilde\pi_s^a)$ for all state-action pairs $(s, a)$ such that $p^\pi(s) > 0$.
+    \item The global minimum of the loss $\mathcal{L}(\theta)$ exists and is attained.
+    \item States $s$ are sampled from the steady-state distribution $p^\pi(s)$, and actions are sampled uniformly from $\A$.
+\end{enumerate}
+
+Fix a state-action pair $(s, a)$ such that $p^\pi(s) > 0$. The learning objective for this pair reduces to the following expected loss:
+\begin{equation}\label{eq:app_reduced_loss}
+    \underset{p(\mathcal{C})}{\mathbb{E}} \left[ \left( \tilde\pi_s^a(\mathcal{C}) - \tilde\pi_s^a(\emptyset) - \sum_{i \in \mathcal{C}} \phi^i \right)^2 \right],
+\end{equation}
+where $\phi \in \mathbb{R}^{|\F|}$ denotes the predicted attribution vector produced by the model for this fixed $(s, a)$.
+
+If the following efficiency constraint is imposed:
+\begin{equation}
+    \sum_{i \in \F} \phi^i = \tilde\pi_s^a(\F) - \tilde\pi_s^a(\emptyset),
+\end{equation}
+then this becomes a constrained weighted least-squares problem with a unique global minimiser given by the Shapley values $\phi(\tilde\pi_s^a)$ \citep{Charnes1988}.
+
+This constraint can be satisfied by applying an additive correction to the model output:
+\begin{equation}
+    \phi^i(\tilde\pi_s^a) := \hat\phi^i(s, a; \theta) + \frac{1}{|\F|} \left( \pi(s, a) - \tilde\pi_s^a(\emptyset) - \sum_{j \in \F} \hat\phi^j(s, a; \theta) \right),
+\end{equation}
+which adjusts the model output by a constant shift that distributes the residual error uniformly across features \citep{Ruiz1998}. This correction preserves the minimiser of the original unconstrained loss because the transformation is linear and orthogonal to the residual, and ensures the efficiency constraint is satisfied.
+
+Since the model class contains the exact solution and the loss is minimised exactly, the globally optimal parameters $\theta^*$ yield a model $\hat\phi(s, a; \theta^*)$ that recovers the Shapley values for all $(s, a)$ such that $p^\pi(s) > 0$ and $a \in \A$.
+\hfill$\blacksquare$
+
+\paragraph{Remark.} All of the Shapley models are trained to solve a weighted least-squares problem whose unique solution is the true Shapley value vector for the given characteristic function. Therefore, these estimators are asymptotically unbiased. 

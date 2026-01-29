@@ -6,11 +6,13 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 import tyro
 from tqdm import tqdm
 
 import wandb
+from core.evaluators.shapley_eval import ShapleyEvaluator
 from core.networks.katago import KataGoConfig, KataGoNetwork
 from core.networks.shapley import (
     BehaviourShapley,
@@ -64,6 +66,8 @@ class Args:
     wandb_project: str = "fastsverl"
     wandb_entity: str = "fastsverl"
     wandb_name: str = "shapley_train"
+    eval_every: int = 500
+    move37_path: str = "data/alphago_game2_move37.npz"
 
 
 def main(args: Args):
@@ -78,7 +82,12 @@ def main(args: Args):
 
     # 1. Initialize Dataset
     print(f"Loading data from {args.data_dir}...")
-    npz_files = sorted([str(p) for p in Path(args.data_dir).glob("*.npz")])
+    data_path = Path(args.data_dir)
+    if data_path.is_file():
+        npz_files = [str(data_path)]
+    else:
+        npz_files = sorted([str(p) for p in data_path.glob("*.npz")])
+
     if not npz_files:
         print("No .npz files found! Please verify data directory.")
         # We can continue for testing if needed, but warnings will be printed by loader
@@ -156,6 +165,23 @@ def main(args: Args):
     key, s_key = jax.random.split(key)
     train_state = trainer.create_train_state(s_key, shapley_model, dummy_input)
 
+    # 4.2 Initialize Evaluator and Load Move 37 data
+    print(f"Initializing Evaluator and loading Move 37 data from {args.move37_path}...")
+    evaluator = ShapleyEvaluator()
+    move37_data = np.load(args.move37_path)
+    # Move 37 is index 36 (0-indexed)
+    m37_idx = 36
+    move37_batch = {
+        "binaryInputNCHW": jnp.array(
+            move37_data["binaryInputNCHW"][m37_idx : m37_idx + 1]
+        ),
+        "action_taken": jnp.array(
+            np.argmax(
+                move37_data["policyTargetsNCMove"][m37_idx : m37_idx + 1, 0, :], axis=-1
+            )
+        ),
+    }
+
     # 4.5. Checkpointing Setup
     ckpt_manager = get_checkpoint_manager(args.save_dir)
     start_step = 0
@@ -206,6 +232,7 @@ def main(args: Args):
             try:
                 batch = next(iterator)
             except StopIteration:
+                dataloader.reset()
                 iterator = iter(dataloader)
                 batch = next(iterator)
 
@@ -267,6 +294,33 @@ def main(args: Args):
                 # Reset logging window
                 log_window_start_time = step_end_time
                 log_window_steps = 0
+
+            # Evaluations every eval_every steps
+            if step % args.eval_every == 0:
+                eval_start_time = time.time()
+                print(f"Running evaluation at step {step}...")
+
+                # We reuse evaluate_move37 which returns image and metrics (axiom tests inside)
+                eval_image, eval_metrics = evaluator.evaluate_move37(
+                    train_state=train_state,
+                    agent_apply_fn=agent.apply,
+                    agent_variables=agent_variables,
+                    move37_batch=move37_batch,
+                    shapley_type=args.shapley_type,
+                )
+
+                eval_cycle_duration = time.time() - eval_start_time
+                eval_metrics["telemetry/eval_cycle_duration_sec"] = eval_cycle_duration
+
+                # Log to wandb
+                wandb.log(
+                    {
+                        **eval_metrics,
+                        f"eval/{args.shapley_type}_move37_image": eval_image,
+                        "train/step": step,
+                    }
+                )
+                print(f"Evaluation complete in {eval_cycle_duration:.2f}s")
 
             # Checkpointing
             if step % args.save_every == 0 and step > start_step:

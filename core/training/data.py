@@ -64,14 +64,24 @@ class KataGoDataLoader:
         file_path = self.npz_files[self.current_file_idx]
         print(f"Loading {file_path}...")
         self.current_npz_data = np.load(file_path)
-        self.num_rows = self.current_npz_data["binaryInputNCHWPacked"].shape[0]
+        if "binaryInputNCHWPacked" in self.current_npz_data:
+            self.num_rows = self.current_npz_data["binaryInputNCHWPacked"].shape[0]
+            self.packed = True
+        else:
+            self.num_rows = self.current_npz_data["binaryInputNCHW"].shape[0]
+            self.packed = False
         self.current_row_idx = 0
         self.current_file_idx += 1
         return True
 
+    def reset(self):
+        """Resets the dataloader to the beginning of the file list."""
+        self.current_file_idx = 0
+        self.current_npz_data = None
+        self.current_row_idx = 0
+        self.num_rows = 0
+
     def __iter__(self):
-        # We don't reset state here to allow resume_from to work correctly
-        # when load_state is called before/after iter()
         return self
 
     def __next__(self):
@@ -86,20 +96,41 @@ class KataGoDataLoader:
         end = start + self.batch_size
         self.current_row_idx = end
 
-        batch = {
-            key: self.current_npz_data[key][start:end]
-            for key in [
-                "binaryInputNCHWPacked",
-                "globalInputNC",
-                "policyTargetsNCMove",
-                "globalTargetsNC",
-                "scoreDistrN",
-                "valueTargetsNCHW",
-            ]
-        }
+        all_possible_keys = [
+            "globalInputNC",
+            "policyTargetsNCMove",
+            "globalTargetsNC",
+            "scoreDistrN",
+            "valueTargetsNCHW",
+            "binaryInputNCHWPacked",
+            "binaryInputNCHW",
+        ]
+        keys = [k for k in all_possible_keys if k in self.current_npz_data]
+
+        batch = {key: self.current_npz_data[key][start:end] for key in keys}
 
         # Transfer and process in JAX
-        processed = process_katago_batch(batch)
+        if self.packed:
+            processed = process_katago_batch(batch)
+        else:
+            # Already unpacked, just rename and convert
+            processed = {
+                "binaryInputNCHW": jnp.array(batch["binaryInputNCHW"]),
+            }
+            if "globalInputNC" in batch:
+                processed["globalInputNC"] = jnp.array(batch["globalInputNC"])
+            if "policyTargetsNCMove" in batch:
+                processed["policyTargetsNCMove"] = jnp.array(
+                    batch["policyTargetsNCMove"]
+                )
+            if "globalTargetsNC" in batch:
+                processed["globalTargetsNC"] = jnp.array(batch["globalTargetsNC"])
+            if "scoreDistrN" in batch:
+                processed["scoreDistrN"] = jnp.array(batch["scoreDistrN"])
+            if "valueTargetsNCHW" in batch:
+                processed["valueTargetsNCHW"] = rearrange(
+                    jnp.array(batch["valueTargetsNCHW"]), "b c h w -> b h w c"
+                )
 
         # Extract action and behaviour logprob for importance sampling
         # policyTargetsNCMove: (B, C, num_actions) where C typically = 2

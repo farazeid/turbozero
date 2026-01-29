@@ -84,12 +84,18 @@ uv run python scripts/train_shapley.py [OPTIONS]
 | `--save_dir`             | `./checkpoints/shapley`                    | Directory to save checkpoints          |
 | `--resume_from`          | `None`                                     | Local path or W&B Run ID to resume     |
 | `--save_every`           | 5000                                       | Steps between checkpoints              |
+| `--eval_every`           | 500                                        | Eval cycle interval (Move 37 + Axioms) |
+| `--move37_path`          | `data/alphago_game2_move37.npz`            | Path to special Move 37 observation    |
 
 **Telemetry Logged to W&B:**
 
 - `train/loss`, `train/shapley_loss`, `train/l2_reg`
-- `train/efficiency_gap`: Distance from satisfied efficiency axiom
+- `train/efficiency_gap`: Distance from satisfied efficiency axiom (monitor for "shrinking gap")
 - `train/grad_norm`, `train/mask_coverage`
+- `eval/[type]_move37_nullity`: Validation of Nullity axiom (lower is better)
+- `eval/[type]_move37_symmetry`: Validation of Symmetry axiom (lower is better)
+- `eval/[type]_move37_image`: 19x19 heatmap with Board/Stone overlay
+- `telemetry/eval_cycle_duration_sec`: Time spent on full evaluation cycle
 - `telemetry/training_iterations_per_sec`, `telemetry/seconds_per_step`
 - `telemetry/total_iterations`, `telemetry/elapsed_time_sec`
 - `final/total_time_sec`, `final/avg_training_iterations_per_sec`
@@ -185,3 +191,13 @@ uv run python scripts/sgf_to_trajectory.py \
 # Log dataset statistics
 uv run python scripts/log_dataset_stats.py --data-path data/alphago_game2_move37.npz
 ````
+
+#### Step 5: Comparative Analysis
+
+To compute the **Spearman Rank Correlation** between two trained models (e.g., Behaviour vs Prediction) on Move 37:
+
+```bash
+uv run python scripts/compare_shapley_models.py \
+  --behaviour_ckpt ./checkpoints/behaviour_run/checkpoint_10000 \
+  --prediction_ckpt ./checkpoints/prediction_run/checkpoint_10000
+```

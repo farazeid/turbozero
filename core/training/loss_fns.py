@@ -119,9 +119,15 @@ def katago_loss_fn(
     policy_loss = optax.softmax_cross_entropy(pred_policy, labels).mean()
 
     # 2. Value Loss
-    # globalTargetsNC contains win/loss info.
-    target_value = batch["globalTargetsNC"][:, 0]
-    value_loss = optax.l2_loss(rearrange(pred_value, "b 1 -> b"), target_value).mean()
+    # pred_value: (N, 3) = [win, loss, draw] or (N, 1)
+    # globalTargetsNC: C0 is win estimate
+    target_value = batch["globalTargetsNC"][:, :3]  # win/loss/draw targets
+    if pred_value.shape[-1] == 3:
+        # Full 3-output: compare win/loss/draw
+        value_loss = optax.l2_loss(pred_value, target_value).mean()
+    else:
+        # Single output: compare to win estimate
+        value_loss = optax.l2_loss(pred_value[:, 0], target_value[:, 0]).mean()
 
     # 3. Ownership Loss
     # pred_ownership: (N, 19, 19, 1)
@@ -133,10 +139,14 @@ def katago_loss_fn(
     ownership_loss = optax.l2_loss(pred_ownership, target_ownership).mean()
 
     # 4. Score Loss
-    # pred_score: (N, 1)
+    # pred_score: (N, 6) misc outputs or (N, 1)
     # globalTargetsNC: C58 is raw scoremean from neural net
-    target_score = batch["globalTargetsNC"][:, 58]
-    score_loss = optax.l2_loss(rearrange(pred_score, "b 1 -> b"), target_score).mean()
+    target_score = batch["globalTargetsNC"][:, 58:64]  # 6 misc values
+    if pred_score.shape[-1] == 6:
+        score_loss = optax.l2_loss(pred_score, target_score).mean()
+    else:
+        # Single output
+        score_loss = optax.l2_loss(pred_score[:, 0], target_score[:, 0]).mean()
 
     # 5. L2 Regularization
     l2_reg = l2_reg_lambda * jax.tree_util.tree_reduce(
@@ -161,6 +171,7 @@ def shapley_loss_fn(
     params: chex.ArrayTree,
     train_state: TrainState,
     batch: Dict[str, chex.Array],
+    importance_weights: chex.Array | None = None,
     l2_reg_lambda: float = 0.0001,
 ) -> Tuple[chex.Array, Tuple[Dict[str, chex.Array], Dict[str, Any]]]:
     """Implements the FastSVERL Shapley Model loss function (Equation 10/19).
@@ -176,6 +187,8 @@ def shapley_loss_fn(
         - 'coalition_mask': (N, H, W, 1) binary mask of known features
         - 'target_char_vals': (N, num_outputs) characteristic values for current coalition
         - 'null_char_vals': (N, num_outputs) characteristic values for empty coalition
+    - `importance_weights`: Optional (N,) array of normalised importance sampling weights
+        for off-policy training. If provided, uses weighted MSE loss.
     - `l2_reg_lambda`: L2 regularization weight
 
     Returns:
@@ -206,9 +219,18 @@ def shapley_loss_fn(
     # targets: (N, num_outputs)
     targets = batch["target_char_vals"] - batch["null_char_vals"]
 
-    # 3. Mean Squared Error across batch and output channels
-    # This automatically handles multi-action (362) and scalar (1) cases
-    shapley_loss = jnp.mean(jnp.square(predictions - targets))
+    # 3. Compute loss (weighted or unweighted MSE)
+    squared_errors = jnp.square(predictions - targets)  # (N, num_outputs)
+
+    if importance_weights is not None:
+        # Weighted MSE: sum(w_i * err_i) where weights are already normalised
+        # Reshape weights for broadcasting: (N,) -> (N, 1)
+        w = importance_weights[:, None]
+        # Sum weighted errors, multiply by batch_size to match unweighted scale
+        shapley_loss = jnp.sum(w * squared_errors) * squared_errors.shape[0]
+    else:
+        # Standard unweighted MSE
+        shapley_loss = jnp.mean(squared_errors)
 
     # 4. L2 Regularization
     l2_reg = l2_reg_lambda * jax.tree_util.tree_reduce(

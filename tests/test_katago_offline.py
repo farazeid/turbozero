@@ -46,7 +46,9 @@ def test_katago_offline(args: Args):
         num_blocks=args.num_blocks,
         num_channels=args.num_channels,
         num_mid_channels=args.num_mid_channels,
+        c_gpool=16,  # Keep small to ensure c_internal > 0
     )
+
     model = KataGoNetwork(config=config)
 
     # Find NPZ files

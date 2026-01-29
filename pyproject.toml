@@ -37,6 +37,8 @@ dependencies = [
     "nvidia-nvjitlink-cu12~=12.8.0 ; sys_platform == 'linux'",
     "sgfmill>=1.1.1",
     "tqdm>=4.67.1",
+    "matplotlib>=3.10.0",
+    "scipy>=1.15.2",
 ]
 
 [dependency-groups]

@@ -131,9 +131,13 @@ def main(args: Args):
     agent = KataGoNetwork(config=agent_config)
 
     key, a_key = jax.random.split(key)
-    # Dummy input for init
+    # Create dummy inputs
     dummy_input = jnp.zeros((1, 19, 19, 22))
-    agent_variables = agent.init(a_key, dummy_input, train=False)
+    dummy_global = jnp.zeros((1, 19))
+
+    agent_variables = agent.init(
+        a_key, dummy_input, global_input=dummy_global, train=False
+    )
 
     # Copy weights if loaded
     if agent_weights:
@@ -163,8 +167,6 @@ def main(args: Args):
     trainer = ShapleyTrainer(shapley_type=args.shapley_type, optimizer=optimizer)
 
     key, s_key = jax.random.split(key)
-    # Create dummy global input for init
-    dummy_global = jnp.zeros((1, 19))  # 19 global features
     train_state = trainer.create_train_state(
         s_key, shapley_model, dummy_input, sample_global=dummy_global
     )

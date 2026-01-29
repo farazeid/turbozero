@@ -239,10 +239,14 @@ def shapley_loss_fn(
 
     loss = shapley_loss + l2_reg
 
+    # Efficiency Gap: mean(|prediction - target|)
+    efficiency_gap = jnp.mean(jnp.abs(predictions - targets))
+
     aux_metrics = {
         "loss": loss,
         "shapley_loss": shapley_loss,
         "l2_reg": l2_reg,
+        "efficiency_gap": efficiency_gap,
     }
 
     return loss, (aux_metrics, updates)

@@ -105,42 +105,66 @@ class ShapleyTrainer:
         # 2. Compute Targets (Frozen Agent)
         # We need v(S) = Agent(x * mask, mask=mask) and v(empty) = Agent(x * 0, mask=zeros)
 
-        def run_agent(input_x, input_g, input_mask):
-            return agent_apply_fn(
-                agent_variables,
-                input_x,
-                global_input=input_g,
-                mask=input_mask,
-                train=False,
-            )
+        # Prepare batch for agent (Masked, Null, Full optional)
+        # We always need Masked and Null. If IS is on, we need Full too.
+        # Construct batch: [Masked, Null, (Full)]
 
-        # Masked input
-        # Note: input_x is already masked by x * mask, but we also pass the mask
-        # so that global pooling layers can correctly normalise.
+        mask_null = jnp.zeros_like(mask)
         x_masked = x * mask
-        out_masked = run_agent(x_masked, g, mask)
+        x_null = x * 0.0
+
+        inputs_list = [x_masked, x_null]
+        masks_list = [mask, mask_null]
+
+        need_full = (
+            use_importance_sampling
+            and "action_taken" in batch
+            and "behaviour_logprob" in batch
+        )
+
+        if need_full:
+            inputs_list.append(x)
+            masks_list.append(jnp.ones_like(mask))
+
+        # Concatenate
+        x_combined = jnp.concatenate(inputs_list, axis=0)
+        mask_combined = jnp.concatenate(masks_list, axis=0)
+        g_combined = jnp.concatenate([g] * len(inputs_list), axis=0)
+
+        # Single Agent Pass
+        out_combined = agent_apply_fn(
+            agent_variables,
+            x_combined,
+            global_input=g_combined,
+            mask=mask_combined,
+            train=False,
+        )
+
+        # Split outputs
+        # out_combined is tuple (policy, value, ownership, score)
+        # Each element has shape (K*B, ...)
+        def split_head(head_out):
+            return jnp.split(head_out, len(inputs_list), axis=0)
+
+        split_outputs = [split_head(h) for h in out_combined]
+        # Transpose to get [(p,v,o,s)_masked, (p,v,o,s)_null, ...]
+        outputs_list = list(zip(*split_outputs))
+
+        out_masked = outputs_list[0]
         target_char_vals = get_agent_target(out_masked, self.shapley_type)
 
-        # Null input (baseline)
-        x_null = x * 0.0
-        mask_null = jnp.zeros_like(mask)
-        out_null = run_agent(x_null, g, mask_null)
+        out_null = outputs_list[1]
         null_char_vals = get_agent_target(out_null, self.shapley_type)
 
-        # Stop gradient on targets (crucial!)
+        # Stop gradient on targets
         target_char_vals = jax.lax.stop_gradient(target_char_vals)
         null_char_vals = jax.lax.stop_gradient(null_char_vals)
 
         # 3. Compute Importance Weights (if enabled and data available)
         importance_weights = None
-        if (
-            use_importance_sampling
-            and "action_taken" in batch
-            and "behaviour_logprob" in batch
-        ):
+        if need_full:
             # Get current policy from agent on full observation
-            # Note: mask=None for full observation
-            out_full = run_agent(x, g, None)
+            out_full = outputs_list[2]
             policy_logits = out_full[0]  # (B, num_actions)
 
             # Compute importance weights
@@ -169,25 +193,6 @@ class ShapleyTrainer:
         (loss, (metrics, _)), grads = grad_fn(
             train_state.params, train_state, loss_batch, importance_weights
         )
-
-        # Compute extra metrics
-        # Efficiency gap: sum(phi) - (target - null)
-        # We need the model output phi (attributions)
-        # Actually, let's just compute it from the batch and predictions
-        # predictions = sum(phi * mask), targets = target_char_vals - null_char_vals
-        # So we can compute the sum directly.
-        variables = (
-            {"params": train_state.params, "batch_stats": train_state.batch_stats}
-            if hasattr(train_state, "batch_stats")
-            else {"params": train_state.params}
-        )
-        phi = train_state.apply_fn(
-            variables, x=x, global_input=g, mask=mask, train=False
-        )
-        phi_sum = jnp.sum(phi, axis=(1, 2))  # (B, num_outputs)
-        targets = target_char_vals - null_char_vals
-        efficiency_gap = jnp.mean(jnp.abs(phi_sum - targets))
-        metrics["efficiency_gap"] = efficiency_gap
 
         # Compute gradient norm for stability monitoring
         grad_norm = optax.global_norm(grads)

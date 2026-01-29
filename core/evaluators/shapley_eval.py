@@ -20,6 +20,7 @@ class ShapleyEvaluator:
         start_time = time.time()
 
         x = move37_batch["binaryInputNCHW"]  # (1, 19, 19, C)
+        g = move37_batch.get("globalInputNC")  # (1, Cg)
         # For visualization, we need stone positions (channels 1 and 2 usually)
         stones = x[0, :, :, 1:3]  # (19, 19, 2)
 
@@ -30,7 +31,7 @@ class ShapleyEvaluator:
             variables = variables.copy({"batch_stats": train_state.batch_stats})
 
         phi = train_state.apply_fn(
-            variables, x=x, mask=None, train=False
+            variables, x=x, global_input=g, mask=None, train=False
         )  # (1, 19, 19, num_outputs)
 
         prefix = "AlphaGo v Lee Sedol, Game 2, Move 37 — "
@@ -57,13 +58,10 @@ class ShapleyEvaluator:
 
         # 2. Axiom Validations
         # Nullity Axiom: Mask a random stone position and check if phi changes insignificantly
-        # Actually, Nullity says if feature i doesn't change v(S+i) - v(S), phi_i = 0.
-        # But user requested: "At a random masked position, place a stone and calculate difference between before and after"
-        # I'll implement exactly what was requested.
-        nullity_score = self.test_nullity(train_state, x)
+        nullity_score = self.test_nullity(train_state, x, g)
 
         # Symmetry Axiom: Rotated/flipped versions should have zero difference
-        symmetry_score = self.test_symmetry(train_state, x)
+        symmetry_score = self.test_symmetry(train_state, x, g)
 
         eval_duration = time.time() - start_time
 
@@ -75,11 +73,9 @@ class ShapleyEvaluator:
 
         return image, metrics
 
-    def test_nullity(self, train_state, x):
+    def test_nullity(self, train_state, x, g):
         # Placeholder for nullity test as described by user
         # "At a random masked position, place a stone and calculate difference between before and after"
-        # If the position is masked, the model should ignore it.
-        # We need a mask for this.
         B, H, W, C = x.shape
         mask = jnp.ones((B, H, W, 1))
         # Mask out a random position (0, r, c)
@@ -90,27 +86,35 @@ class ShapleyEvaluator:
         if hasattr(train_state, "batch_stats") and train_state.batch_stats is not None:
             variables = variables.copy({"batch_stats": train_state.batch_stats})
 
-        phi_before = train_state.apply_fn(variables, x=x, mask=mask, train=False)
+        phi_before = train_state.apply_fn(
+            variables, x=x, global_input=g, mask=mask, train=False
+        )
 
         # Change something at (r, c) in x
         x_after = x.at[0, r, c, 1].set(1.0 - x[0, r, c, 1])  # Flip stone presence
-        phi_after = train_state.apply_fn(variables, x=x_after, mask=mask, train=False)
+        phi_after = train_state.apply_fn(
+            variables, x=x_after, global_input=g, mask=mask, train=False
+        )
 
         diff = jnp.abs(phi_before - phi_after).mean()
         return float(diff)
 
-    def test_symmetry(self, train_state, x):
+    def test_symmetry(self, train_state, x, g):
         # Symmetry: Rotate input and check if output is rotated accordingly
-        # If we rotate x by 90 deg, phi should be rotated by 90 deg.
         variables = FrozenDict({"params": train_state.params})
         if hasattr(train_state, "batch_stats") and train_state.batch_stats is not None:
             variables = variables.copy({"batch_stats": train_state.batch_stats})
 
-        phi_orig = train_state.apply_fn(variables, x=x, mask=None, train=False)
+        phi_orig = train_state.apply_fn(
+            variables, x=x, global_input=g, mask=None, train=False
+        )
 
         # Rotate x (rot90 on H, W)
         x_rot = jnp.rot90(x, k=1, axes=(1, 2))
-        phi_rot_pred = train_state.apply_fn(variables, x=x_rot, mask=None, train=False)
+        # Note: global inputs are NOT rotated as they are not spatial
+        phi_rot_pred = train_state.apply_fn(
+            variables, x=x_rot, global_input=g, mask=None, train=False
+        )
 
         # Rotate original phi
         phi_orig_rot = jnp.rot90(phi_orig, k=1, axes=(1, 2))
@@ -118,7 +122,7 @@ class ShapleyEvaluator:
         diff = jnp.abs(phi_orig_rot - phi_rot_pred).mean()
         return float(diff)
 
-    def compute_correlations(self, train_state_b, train_state_p, x, action_taken):
+    def compute_correlations(self, train_state_b, train_state_p, x, g, action_taken):
         # Spearman correlation between behavior and prediction
         variables_b = FrozenDict({"params": train_state_b.params})
         if (
@@ -134,8 +138,12 @@ class ShapleyEvaluator:
         ):
             variables_p = variables_p.copy({"batch_stats": train_state_p.batch_stats})
 
-        phi_b = train_state_b.apply_fn(variables_b, x=x, mask=None, train=False)
-        phi_p = train_state_p.apply_fn(variables_p, x=x, mask=None, train=False)
+        phi_b = train_state_b.apply_fn(
+            variables_b, x=x, global_input=g, mask=None, train=False
+        )
+        phi_p = train_state_p.apply_fn(
+            variables_p, x=x, global_input=g, mask=None, train=False
+        )
 
         vector_b = phi_b[0, :, :, action_taken].flatten()
         vector_p = phi_p[0, :, :, 0].flatten()

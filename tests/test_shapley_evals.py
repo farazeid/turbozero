@@ -76,7 +76,10 @@ def run_test(args: Args, shapley_type: str, key):
     key, a_key, s_key = jax.random.split(key, 3)
     agent_variables = agent.init(a_key, dummy_x, train=False)
 
-    shapley_variables = shapley_model.init(s_key, dummy_x, mask=None, train=False)
+    dummy_global = jnp.zeros((1, 19))
+    shapley_variables = shapley_model.init(
+        s_key, dummy_x, global_input=dummy_global, mask=None, train=False
+    )
     train_state = ShapleyTrainState.create(
         apply_fn=shapley_model.apply,
         params=shapley_variables["params"],

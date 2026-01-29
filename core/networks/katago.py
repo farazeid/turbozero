@@ -320,8 +320,9 @@ class KataGoNetwork(nn.Module):
     config: KataGoConfig
 
     @nn.compact
-    def __call__(self, x, mask=None, train: bool = True):
+    def __call__(self, x, global_input=None, mask=None, train: bool = True):
         # x: (B, H, W, C) - binary input features
+        # global_input: (B, Cg) - global features
 
         # Create mask if not provided
         if mask is None:
@@ -340,9 +341,11 @@ class KataGoNetwork(nn.Module):
         )(x)
 
         # Global input processing (linear_global)
-        # For now, we skip global inputs - can be added later
-        # global_out = nn.Dense(self.config.num_channels, use_bias=False, name="linear_global")(global_inputs)
-        # trunk = trunk + global_out[:, None, None, :]
+        if global_input is not None:
+            global_out = nn.Dense(
+                self.config.num_channels, use_bias=False, name="linear_global"
+            )(global_input)
+            trunk = trunk + global_out[:, None, None, :]
 
         # Trunk blocks
         for i in range(self.config.num_blocks):

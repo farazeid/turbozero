@@ -73,7 +73,10 @@ def test_shapley_train_step_integration(args: Args):
     optimizer = optax.adam(args.lr)
     trainer = ShapleyTrainer(shapley_type="behaviour", optimizer=optimizer)
 
-    train_state = trainer.create_train_state(k2, shapley_model, dummy_input)
+    dummy_global = jnp.zeros((args.batch_size, 19))
+    train_state = trainer.create_train_state(
+        k2, shapley_model, dummy_input, sample_global=dummy_global
+    )
 
     # 3. Run Train Step
     batch = {"binaryInputNCHW": jax.random.normal(key, (args.batch_size, H, W, C))}

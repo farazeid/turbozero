@@ -205,6 +205,7 @@ def shapley_loss_fn(
     phi, updates = train_state.apply_fn(
         variables,
         x=batch["observation"],
+        global_input=batch.get("global_input"),
         mask=batch["coalition_mask"],
         train=True,
         mutable=mutables,
@@ -220,17 +221,16 @@ def shapley_loss_fn(
     targets = batch["target_char_vals"] - batch["null_char_vals"]
 
     # 3. Compute loss (weighted or unweighted MSE)
-    squared_errors = jnp.square(predictions - targets)  # (N, num_outputs)
+    # Average over outputs first
+    errors = jnp.mean(jnp.square(predictions - targets), axis=-1)  # (N,)
 
     if importance_weights is not None:
-        # Weighted MSE: sum(w_i * err_i) where weights are already normalised
-        # Reshape weights for broadcasting: (N,) -> (N, 1)
-        w = importance_weights[:, None]
-        # Sum weighted errors, multiply by batch_size to match unweighted scale
-        shapley_loss = jnp.sum(w * squared_errors) * squared_errors.shape[0]
+        # Weighted MSE: sum(w_i * err_i)
+        # Note: importance_weights are expected to be self-normalised (sum to 1)
+        shapley_loss = jnp.sum(importance_weights * errors)
     else:
         # Standard unweighted MSE
-        shapley_loss = jnp.mean(squared_errors)
+        shapley_loss = jnp.mean(errors)
 
     # 4. L2 Regularization
     l2_reg = l2_reg_lambda * jax.tree_util.tree_reduce(

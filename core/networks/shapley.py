@@ -73,12 +73,14 @@ class ShapleyNetwork(nn.Module):
     def __call__(
         self,
         x: jnp.ndarray,
+        global_input: Optional[jnp.ndarray] = None,
         mask: Optional[jnp.ndarray] = None,
         train: bool = True,
         grand_val: Optional[jnp.ndarray] = None,
         null_val: Optional[jnp.ndarray] = None,
     ):
         # x: (B, H, W, C)
+        # global_input: (B, Cg)
         # mask: (B, H, W, 1) - If None, defaults to all ones.
 
         if mask is None:
@@ -94,6 +96,13 @@ class ShapleyNetwork(nn.Module):
             padding="SAME",
             use_bias=False,
         )(x * mask)
+
+        # Global input processing (matched to KataGo)
+        if global_input is not None:
+            global_out = nn.Dense(
+                self.config.num_channels, use_bias=False, name="linear_global"
+            )(global_input)
+            out = out + global_out[:, None, None, :]
 
         # Residual Trunk (fewer blocks than agent)
         num_blocks = max(1, int(self.config.num_blocks * self.config.blocks_ratio))
@@ -158,10 +167,12 @@ class BehaviourShapley(nn.Module):
     num_actions: int = 362  # 19*19 + 1
 
     @nn.compact
-    def __call__(self, x, mask=None, train=True, grand_val=None, null_val=None):
+    def __call__(
+        self, x, global_input=None, mask=None, train=True, grand_val=None, null_val=None
+    ):
         num_outputs = self.num_actions if self.config.multi_action else 1
         return ShapleyNetwork(config=self.config, num_outputs=num_outputs)(
-            x, mask, train, grand_val, null_val
+            x, global_input, mask, train, grand_val, null_val
         )
 
 
@@ -171,9 +182,11 @@ class OutcomeShapley(nn.Module):
     config: ShapleyConfig
 
     @nn.compact
-    def __call__(self, x, mask=None, train=True, grand_val=None, null_val=None):
+    def __call__(
+        self, x, global_input=None, mask=None, train=True, grand_val=None, null_val=None
+    ):
         return ShapleyNetwork(config=self.config, num_outputs=1)(
-            x, mask, train, grand_val, null_val
+            x, global_input, mask, train, grand_val, null_val
         )
 
 
@@ -183,7 +196,9 @@ class PredictionShapley(nn.Module):
     config: ShapleyConfig
 
     @nn.compact
-    def __call__(self, x, mask=None, train=True, grand_val=None, null_val=None):
+    def __call__(
+        self, x, global_input=None, mask=None, train=True, grand_val=None, null_val=None
+    ):
         return ShapleyNetwork(config=self.config, num_outputs=1)(
-            x, mask, train, grand_val, null_val
+            x, global_input, mask, train, grand_val, null_val
         )

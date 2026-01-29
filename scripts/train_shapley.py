@@ -163,7 +163,11 @@ def main(args: Args):
     trainer = ShapleyTrainer(shapley_type=args.shapley_type, optimizer=optimizer)
 
     key, s_key = jax.random.split(key)
-    train_state = trainer.create_train_state(s_key, shapley_model, dummy_input)
+    # Create dummy global input for init
+    dummy_global = jnp.zeros((1, 19))  # 19 global features
+    train_state = trainer.create_train_state(
+        s_key, shapley_model, dummy_input, sample_global=dummy_global
+    )
 
     # 4.2 Initialize Evaluator and Load Move 37 data
     print(f"Initializing Evaluator and loading Move 37 data from {args.move37_path}...")
@@ -175,6 +179,7 @@ def main(args: Args):
         "binaryInputNCHW": jnp.array(
             move37_data["binaryInputNCHW"][m37_idx : m37_idx + 1]
         ),
+        "globalInputNC": jnp.array(move37_data["globalInputNC"][m37_idx : m37_idx + 1]),
         "action_taken": jnp.array(
             np.argmax(
                 move37_data["policyTargetsNCMove"][m37_idx : m37_idx + 1, 0, :], axis=-1

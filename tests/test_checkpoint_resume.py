@@ -58,8 +58,11 @@ def run_test(args: Args):
     trainer = ShapleyTrainer(shapley_type=args.shapley_type, optimizer=optimizer)
 
     dummy_input = jnp.zeros((1, 19, 19, 22))
+    dummy_global = jnp.zeros((1, 19))  # Assuming batch size 1 for init
     key, subkey = jax.random.split(key)
-    initial_state = trainer.create_train_state(subkey, model, dummy_input)
+    initial_state = trainer.create_train_state(
+        subkey, model, dummy_input, sample_global=dummy_global
+    )
 
     # Use dummy data
     import glob
@@ -74,7 +77,7 @@ def run_test(args: Args):
     train_state = initial_state
 
     # Mock agent components
-    def dummy_agent_fn(variables, x, train=False):
+    def dummy_agent_fn(variables, x, train=False, **kwargs):
         # policy (362), value (3), ownership (19,19,1), misc (6)
         return (
             jnp.zeros((x.shape[0], 362)),

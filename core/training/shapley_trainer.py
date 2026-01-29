@@ -50,9 +50,11 @@ class ShapleyTrainer:
         self.shapley_type = shapley_type
         self.optimizer = optimizer
 
-    def create_train_state(self, key, shapley_model, sample_input):
+    def create_train_state(self, key, shapley_model, sample_input, sample_global=None):
         """Initializes the TrainState for the Shapley model."""
-        variables = shapley_model.init(key, sample_input, mask=None, train=False)
+        variables = shapley_model.init(
+            key, sample_input, global_input=sample_global, mask=None, train=False
+        )
         params = variables["params"]
 
         if "batch_stats" in variables:
@@ -84,7 +86,7 @@ class ShapleyTrainer:
             train_state: Current Shapley model TrainState
             agent_apply_fn: Apply function for the frozen agent (static)
             agent_variables: Variables for the frozen agent (params + batch_stats)
-            batch: Data batch (must contain 'binaryInputNCHW', optionally
+            batch: Data batch (must contain 'binaryInputNCHW', 'globalInputNC', optionally
                    'action_taken' and 'behaviour_logprob' for importance sampling)
             key: PRNG key for mask sampling
             use_importance_sampling: If True, compute and apply importance weights
@@ -93,6 +95,7 @@ class ShapleyTrainer:
             Updated TrainState and metrics.
         """
         x = batch["binaryInputNCHW"]
+        g = batch.get("globalInputNC")
         B, H, W, C = x.shape
 
         # 1. Sample Masks
@@ -100,21 +103,28 @@ class ShapleyTrainer:
         mask = sample_shapley_masks(key, B, H, W)  # (B, H, W, 1)
 
         # 2. Compute Targets (Frozen Agent)
-        # We need v(S) = Agent(x * mask) and v(empty) = Agent(x * 0)
+        # We need v(S) = Agent(x * mask, mask=mask) and v(empty) = Agent(x * 0, mask=zeros)
 
-        def run_agent(input_x):
-            # Agent expects train=True/False?
-            # Usually train=False for target generation to disable Dropout/BatchNorm update (use running stats)
-            return agent_apply_fn(agent_variables, input_x, train=False)
+        def run_agent(input_x, input_g, input_mask):
+            return agent_apply_fn(
+                agent_variables,
+                input_x,
+                global_input=input_g,
+                mask=input_mask,
+                train=False,
+            )
 
         # Masked input
+        # Note: input_x is already masked by x * mask, but we also pass the mask
+        # so that global pooling layers can correctly normalise.
         x_masked = x * mask
-        out_masked = run_agent(x_masked)
+        out_masked = run_agent(x_masked, g, mask)
         target_char_vals = get_agent_target(out_masked, self.shapley_type)
 
         # Null input (baseline)
         x_null = x * 0.0
-        out_null = run_agent(x_null)
+        mask_null = jnp.zeros_like(mask)
+        out_null = run_agent(x_null, g, mask_null)
         null_char_vals = get_agent_target(out_null, self.shapley_type)
 
         # Stop gradient on targets (crucial!)
@@ -129,7 +139,8 @@ class ShapleyTrainer:
             and "behaviour_logprob" in batch
         ):
             # Get current policy from agent on full observation
-            out_full = run_agent(x)
+            # Note: mask=None for full observation
+            out_full = run_agent(x, g, None)
             policy_logits = out_full[0]  # (B, num_actions)
 
             # Compute importance weights
@@ -148,6 +159,7 @@ class ShapleyTrainer:
         # Prepare batch for loss function
         loss_batch = {
             "observation": x,
+            "global_input": g,
             "coalition_mask": mask,
             "target_char_vals": target_char_vals,
             "null_char_vals": null_char_vals,
@@ -169,7 +181,9 @@ class ShapleyTrainer:
             if hasattr(train_state, "batch_stats")
             else {"params": train_state.params}
         )
-        phi = train_state.apply_fn(variables, x=x, mask=mask, train=False)
+        phi = train_state.apply_fn(
+            variables, x=x, global_input=g, mask=mask, train=False
+        )
         phi_sum = jnp.sum(phi, axis=(1, 2))  # (B, num_outputs)
         targets = target_char_vals - null_char_vals
         efficiency_gap = jnp.mean(jnp.abs(phi_sum - targets))

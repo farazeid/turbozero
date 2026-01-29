@@ -1,4 +1,5 @@
 data
+tmp_ckpt_test
 wandb
 
 *.ckpt

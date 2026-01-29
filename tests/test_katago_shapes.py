@@ -59,9 +59,9 @@ def test_katago_shapes(args: Args):
     print(f"Score shape: {score.shape}")
 
     assert policy.shape == (args.batch_size, args.pos_len * args.pos_len + 1)
-    assert value.shape == (args.batch_size, 1)
+    assert value.shape == (args.batch_size, 3)  # win/loss/draw
     assert ownership.shape == (args.batch_size, args.pos_len, args.pos_len, 1)
-    assert score.shape == (args.batch_size, 1)
+    assert score.shape == (args.batch_size, 6)  # misc value outputs
 
     # Log to W&B
     wandb.log(
